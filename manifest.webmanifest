@@ -1,7 +1,7 @@
 {
-  "name": "Mochi 字卡",
-  "short_name": "Mochi",
-  "description": "Mochi 字卡单文件应用",
+  "name": "齊陳家",
+  "short_name": "齊陳家",
+  "description": "齊陳家字卡",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
