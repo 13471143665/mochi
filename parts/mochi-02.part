@@ -24908,7 +24908,7 @@ if (window.__mochiLoaded) window.__mochiLoaded.push("mobile-adapt.js");
     if (s < 1) s = 1;
     return s;
   }
-  function tierOf(s) { return s >= 8 ? '满意' : (s >= 5 ? '凑合' : '一般'); }
+  function tierOf(s) { return s >= 7 ? '易' : (s >= 4 ? '中' : '难'); }
 
   /* ---------- AI 接口（可选） ---------- */
   function buildSystemPrompt() {
@@ -25124,10 +25124,12 @@ if (window.__mochiLoaded) window.__mochiLoaded.push("mobile-adapt.js");
   }
   function paintScore(box, val) {
     var s = scoreOf(val);
+    /* v92：档位与「专属字卡 · 字卡适应度」同口径——≥7 易(绿) / ≥4 中(黄) / <4 难(红)，
+       与 card-sat-yz.js 的 tier 判定完全一致，两边星星互相对得上 */
     var tier = tierOf(s);
     var stars = '';
     for (var i = 1; i <= 10; i++) stars += (i <= s ? '★' : '☆');
-    box.className = 'crw-score' + (s >= 8 ? '' : (s >= 5 ? ' mid' : ' low'));
+    box.className = 'crw-score' + (s >= 7 ? '' : (s >= 4 ? ' mid' : ' low'));
     box.innerHTML = '<span>他会怎么想</span><span class="st">' + stars + '</span><span class="num">' + s + '/10 ' + tier + '</span>';
   }
   function openRewrite(opts) {
