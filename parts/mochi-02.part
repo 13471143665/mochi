@@ -1,3 +1,314 @@
+(boxPending(it) ? '<div class="giftbox-pending">待领取</div>' : '') +
+(boxReplies(it).length ? '<div class="giftbox-repls">' + boxReplyRows(it) + '</div>' : '') +
+'<div class="giftbox-meta">' + esc(from) + ' · ' + esc(fmtTime(it.tm)) + '</div>' +
+'</div>' +
+'</div>';
+})() }; });
+el.innerHTML = window.mochiHistFold(rows, {
+key: 'gift-' + boxTab,
+empty: '<div class="gift-empty">' + (boxTab === 'in' ? (esc(partnerName()) + ' 还没送你礼物<br>' + (window.taFit ? window.taFit('他偶尔会主动从市集挑一份给你，耐心等等') : '他偶尔会主动从市集挑一份给你，耐心等等')) : boxTab === 'self' ? (esc(partnerName()) + ' 还没给自己买过礼物<br>TA 偶尔会按概率给自己挑一件，收进自己的心意柜') : ('你还没送出礼物<br>去心意市集挑一份送给 ' + esc(partnerName()) + ' 吧')) + '</div>',
+todayEmpty: '<div class="dc-h-day-empty">今天没有新的心意</div>'
+});
+el.querySelectorAll('.giftbox-card').forEach(function (c) {
+c.addEventListener('click', function () {
+const it = list.find(function (x) { return x.id === c.dataset.id; });
+if (!it || !window.openTCPanel) return;
+const from = it.side === 'in' ? esc(partnerName()) + ' 送我' : it.side === 'self' ? esc(partnerName()) + ' 自己买的' : '我 送 ' + esc(partnerName());
+const html =
+'<div class="gb-detail">' +
+'<div class="gb-detail-emoji">' + giftMedia(it, 'gb-detail-emoji-img') + '</div>' +
+'<div class="gb-detail-name">' + esc(it.name) + '</div>' +
+'<div class="gb-detail-price">¥' + Number(it.price || 0).toFixed(2) + '</div>' +
+'<div class="gb-detail-wish">"' + esc(it.wish || '心意') + '"</div>' +
+'<div class="gb-detail-meta">' + esc(from) + ' · ' + esc(fmtTime(it.tm)) + '</div>' +
+(boxPending(it) ? '<div class="giftbox-pending gb-detail-pending">待领取</div>' : '') +
+(boxReplies(it).length
+? '<div class="gb-detail-repl-title">这件礼物上的回复</div><div class="gb-detail-repls">' + boxReplyRows(it) + '</div>'
+: '') +
+(boxPending(it) ? '<div class="gb-detail-claim"><button class="msg-gift-claim" type="button" data-gb-claim="' + esc(it.id) + '">领取</button></div>' : '') +
+'</div>';
+window.openTCPanel('心意柜', html);
+const claimBtn = (function () {
+const b = document.querySelector('#tc-body button[data-gb-claim]');
+return (b && b.dataset.gbClaim === String(it.id)) ? b : null;
+})();
+if (claimBtn) claimBtn.addEventListener('click', function () {
+if (!boxPending(it)) return; // 已领取＝幂等（旧面板残留按钮也不重复记账）
+if (!window.giftBoxMarkClaimed || !window.giftBoxMarkClaimed(it.id)) {
+if (typeof window.toast === 'function') window.toast('暂时领不了，稍后再试');
+return;
+}
+renderBox(); // 柜列表就地转已领取（待领取徽标消失、统计不变）
+const done = document.createElement('span');
+done.className = 'msg-gift-got';
+done.textContent = '✓ 已领取';
+claimBtn.replaceWith(done);
+if (typeof window.toast === 'function') window.toast('已领取');
+try { if (window.chatGiftClaimSync) window.chatGiftClaimSync(it.id, it.name); } catch (eCS) {}
+});
+});
+});
+}
+function openPage(pg) {
+document.querySelectorAll('.page').forEach(function (p) { p.hidden = true; });
+pg.hidden = false;
+requestAnimationFrame(function () {
+const tabbar = document.querySelector('.tabbar'); if (tabbar) tabbar.hidden = true;
+const phone = document.querySelector('.phone'); if (phone) phone.classList.add('no-statusbar');
+pg.classList.add('full');
+});
+}
+function backHome() {
+document.querySelectorAll('.page').forEach(function (p) { p.hidden = true; });
+const home = document.getElementById('page-phone'); if (home) home.hidden = false;
+const tabbar = document.querySelector('.tabbar'); if (tabbar) tabbar.hidden = false;
+const phone = document.querySelector('.phone'); if (phone) phone.classList.remove('no-statusbar');
+}
+const BACK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
+const MARKET_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l-1 12H7L6 8z"/><path d="M6 8a6 6 0 0112 0"/><path d="M12 8v4"/></svg>';
+const BOX_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M3 12h18"/><path d="M12 8V5"/><path d="M9 5h6"/></svg>';
+function makeApp(app, name, svg) {
+const a = document.createElement('div');
+a.className = 'app'; a.setAttribute('data-app', app); a.setAttribute('data-desk-widget', 'app-' + app);
+a.innerHTML = '<div class="app-ico">' + svg + '</div><div class="app-name">' + name + '</div>';
+return a;
+}
+function injectDeskApps(pairs) {
+const st = store();
+let layArr = null;
+try { if (st) layArr = JSON.parse(st.get('desk-layout') || 'null'); } catch (e) {}
+const hasLayout = Array.isArray(layArr);
+const ids = pairs.map(function (p) { return p.id; });
+const alreadyInLay = hasLayout && layArr.some(function (pg) { return (pg || []).some(function (w) { return ids.indexOf(w) >= 0; }); });
+let placed = false;
+if (hasLayout && !alreadyInLay) {
+const pagesBox = document.getElementById('desktop-pages');
+if (pagesBox) {
+const curCnt = pagesBox.querySelectorAll('.page-slide').length;
+if (curCnt < 5) {
+const slide = document.createElement('div');
+slide.className = 'page-slide desk-page';
+slide.dataset.desk = String(curCnt);
+const grid = document.createElement('div');
+grid.className = 'app-grid';
+pairs.forEach(function (p) { grid.appendChild(p.el); });
+slide.appendChild(grid);
+pagesBox.appendChild(slide);
+try { st.set('desk-page-count', String(curCnt + 1)); layArr.push(ids.slice()); st.set('desk-layout', JSON.stringify(layArr)); } catch (e) {}
+try { if (window.deskRebuild) window.deskRebuild(); } catch (e) {}
+placed = true;
+}
+}
+}
+if (!placed) {
+pairs.forEach(function (p) {
+const p3 = document.querySelector('.app-grid.p3-grid');
+if (p3) p3.appendChild(p.el); else { const p2 = document.querySelector('.app-grid.p2-grid'); if (p2) p2.appendChild(p.el); }
+});
+try { if (window.applyDeskLayout) window.applyDeskLayout(); } catch (e) {}
+}
+}
+function buildMarketPage(host) {
+marketPage = document.createElement('div');
+marketPage.className = 'page'; marketPage.id = 'page-market'; marketPage.hidden = true;
+marketPage.innerHTML =
+'<div class="chat-head"><span class="ch-back" id="market-back">' + BACK_SVG + '</span><span class="ch-name">心意市集</span></div>' +
+'<div class="market-body">' +
+'<div class="market-hero">' +
+'<div class="market-hero-title">心意市集</div>' +
+'<div class="market-hero-sub">挑一份心意，跨越两个世界送给 TA</div>' +
+'<div class="market-balance" id="market-balance"></div>' +
+'</div>' +
+'<div class="market-mine" id="market-mine"></div>' +
+'<div class="market-cats" id="market-cats"></div>' +
+searchRowHtml('market-search') +
+'<div class="market-grid" id="market-grid"></div>' +
+'<div class="market-foot">' +
+'<button class="market-tool" id="market-wish" type="button">☆ 心愿单</button>' +
+'<button class="market-tool" id="market-manage" type="button">管理</button>' +
+'<button class="market-tool" id="market-add" type="button">＋ 上传商品</button>' +
+'<button class="market-tool" id="market-settings" type="button">设置</button>' +
+'<button class="market-tool" id="market-reset" type="button" hidden>恢复默认商品</button>' +
+'</div>' +
+'</div>';
+host.appendChild(marketPage);
+document.getElementById('market-back').addEventListener('click', backHome);
+bindSearchRow('market-search', renderMarket);
+const mineBox = document.getElementById('market-mine');
+if (mineBox) mineBox.addEventListener('click', function (e) {
+const b = e.target && e.target.closest ? e.target.closest('button') : null;
+if (!b || !b.id) return;
+if (b.id === 'market-mine-add') openAddGiftForm(null);
+else if (b.id === 'market-mine-export') exportMarketGoods();
+else if (b.id === 'market-mine-import') importMarketGoods();
+});
+document.getElementById('market-wish').addEventListener('click', function () { wishTab = taWishUnread() ? 'ta' : 'my'; renderWishPanel(); });
+document.getElementById('market-settings').addEventListener('click', openGiftSettings);
+document.getElementById('market-add').addEventListener('click', function () { if (marketManage) { marketManage = false; renderMarket(); return; } openAddGiftForm(null); });
+document.getElementById('market-manage').addEventListener('click', function () { marketManage = !marketManage; renderMarket(); });
+document.getElementById('market-reset').addEventListener('click', function () {
+if (!window.openModal) return;
+window.openModal('恢复默认商品？（清除对默认商品的修改/删除记录，自定义商品保留）', '', function () {
+if (customWriteBlocked()) return; customSave(customLoad().filter(function (c) { return c && !c.del && !c.base; }));
+renderMarket(); toast('已恢复默认');
+}, { noInput: true });
+});
+}
+function buildGiftboxPage(host) {
+giftboxPage = document.createElement('div');
+giftboxPage.className = 'page'; giftboxPage.id = 'page-giftbox'; giftboxPage.hidden = true;
+giftboxPage.innerHTML =
+'<div class="chat-head"><span class="ch-back" id="giftbox-back">' + BACK_SVG + '</span><span class="ch-name">心意柜</span></div>' +
+'<div class="giftbox-hero">' +
+'<div class="giftbox-hero-title">心意柜</div>' +
+'<div class="giftbox-hero-sub">每一份心意，都值得被珍藏</div>' +
+'<div class="giftbox-stat-cards">' +
+'<div class="giftbox-stat-card"><div class="giftbox-stat-ico">🎁</div><div class="giftbox-stat-num" id="giftbox-stat-in">0</div><div class="giftbox-stat-lbl">收到</div></div>' +
+'<div class="giftbox-stat-card"><div class="giftbox-stat-ico">💌</div><div class="giftbox-stat-num" id="giftbox-stat-out">0</div><div class="giftbox-stat-lbl">送出</div></div>' +
+'<div class="giftbox-stat-card"><div class="giftbox-stat-ico">🛍️</div><div class="giftbox-stat-num" id="giftbox-stat-self">0</div><div class="giftbox-stat-lbl">TA自己买</div></div>' +
+'</div>' +
+'<div class="giftbox-set"><button id="giftbox-tawish" type="button">☆ 看看 ' + esc(partnerName()) + ' 的心愿单</button><button id="giftbox-settings" type="button">⚙ 心意集市和心意柜设置</button></div>' +
+'</div>' +
+'<div class="giftbox-tabs">' +
+'<button class="gb-tab sel" data-btab="in" type="button">收到的</button>' +
+'<button class="gb-tab" data-btab="out" type="button">送出的</button>' +
+'<button class="gb-tab" data-btab="self" type="button">TA自己买的</button>' +
+'</div>' +
+'<div class="giftbox-scroll"><div class="giftbox-list" id="giftbox-list"></div></div>';
+host.appendChild(giftboxPage);
+document.getElementById('giftbox-back').addEventListener('click', function () {
+const fromChat = window.__giftboxFrom === 'chat';
+window.__giftboxFrom = '';
+if (fromChat) {
+document.querySelectorAll('.page').forEach(function (p) { p.hidden = true; });
+const chat = document.getElementById('page-chat'); if (chat) chat.hidden = false;
+const tabbar = document.querySelector('.tabbar'); if (tabbar) tabbar.hidden = false;
+const phone = document.querySelector('.phone'); if (phone) phone.classList.remove('no-statusbar');
+if (giftboxPage) giftboxPage.classList.remove('full');
+} else {
+backHome();
+}
+});
+giftboxPage.querySelectorAll('.gb-tab').forEach(function (t) {
+t.addEventListener('click', function () { boxTab = t.dataset.btab; renderBox(); });
+});
+const gbSettings = document.getElementById('giftbox-settings');
+if (gbSettings) gbSettings.addEventListener('click', openGiftSettings);
+const gbTaWish = document.getElementById('giftbox-tawish');
+if (gbTaWish) gbTaWish.addEventListener('click', function () { wishTab = 'ta'; renderWishPanel(); });
+}
+function init() {
+try { migrateMarketGlobal(false); } catch (e) {}
+try { rescueNewDefaults(); } catch (e) {}
+try { wlUpgradeAndNotify(); } catch (e) {}
+document.addEventListener('mochi-restore-done', function () { try { migrateMarketGlobal(true); } catch (e) {} try { rescueNewDefaults(); } catch (e) {} try { wlUpgradeAndNotify(); } catch (e) {} });
+const host = (document.getElementById('page-phone') || {}).parentNode || document.body;
+buildMarketPage(host);
+buildGiftboxPage(host);
+['gift-balance', 'market-balance'].forEach(function (id) {
+const el = document.getElementById(id);
+if (el) el.addEventListener('click', function (e) { e.stopPropagation(); giftEditWallet(); });
+});
+const marketApp = makeApp('market', '心意市集', MARKET_SVG);
+const giftboxApp = makeApp('giftbox', '心意柜', BOX_SVG);
+injectDeskApps([{ el: marketApp, id: 'app-market' }, { el: giftboxApp, id: 'app-giftbox' }]);
+if (marketApp) marketApp.addEventListener('click', function () { if (editingNow()) return; marketManage = false; panelCat = '全部'; openPage(marketPage); renderMarket(); });
+if (giftboxApp) giftboxApp.addEventListener('click', function () { if (editingNow()) return; window.__giftboxFrom = ''; boxTab = 'in'; openPage(giftboxPage); renderBox(); });
+document.addEventListener('contact-switched', function () {
+try { boxMetaInvalidate(); } catch (e) {}   // #985：切桌面后卡片状态按新桌面重读
+try { syncGiftNames(); } catch (e) {}
+try { if (giftboxPage && !giftboxPage.hidden) renderBox(); } catch (e) {}
+try { if (marketPage && !marketPage.hidden) renderMarket(); } catch (e) {}
+});
+const gp = document.getElementById('chat-gift-panel');
+if (gp) {
+const closeBtn = document.getElementById('chat-gift-close');
+if (closeBtn) closeBtn.addEventListener('click', closeGiftPanel);
+if (!document.getElementById('gift-search')) {
+const catsNode = document.getElementById('gift-cats');
+if (catsNode) catsNode.insertAdjacentHTML('beforebegin', searchRowHtml('gift-search'));
+bindSearchRow('gift-search', giftPanelRerender);
+}
+if (!document.getElementById('gift-wish-entry')) {
+const catsNode2 = document.getElementById('gift-cats');
+if (catsNode2) catsNode2.insertAdjacentHTML('beforebegin', '<div class="gift-wish-row" id="gift-wish-entry"><button id="gift-wish-ta" type="button">☆ 看看 ' + esc(partnerName()) + ' 的心愿单</button></div>');
+}
+if (!document.getElementById('gift-mine-entry')) {
+const catsNode3 = document.getElementById('gift-cats');
+if (catsNode3) catsNode3.insertAdjacentHTML('beforebegin', '<div class="gift-mine-row" id="gift-mine-entry"><button id="gift-mine-add" type="button">＋ 上传我的商品</button></div>');
+}
+const mineAddBtn = document.getElementById('gift-mine-add');
+if (mineAddBtn) mineAddBtn.addEventListener('click', function () { openAddGiftForm(null); });
+const gwBtn = document.getElementById('gift-wish-ta');
+if (gwBtn) gwBtn.addEventListener('click', function () {
+closeGiftPanel();
+wishTab = 'ta';
+renderWishPanel();
+});
+}
+const moreGift = document.getElementById('more-gift');
+if (moreGift) moreGift.addEventListener('click', function (e) { e.stopPropagation(); openGiftPanel(); });
+const moreGiftbox = document.getElementById('more-giftbox');
+if (moreGiftbox) moreGiftbox.addEventListener('click', function (e) {
+e.stopPropagation();
+const mp = document.getElementById('chat-more-panel');
+if (mp) mp.hidden = true;
+window.__giftboxFrom = 'chat';
+boxTab = 'in';
+openPage(giftboxPage);
+renderBox();
+});
+}
+if (document.readyState === 'loading') {
+document.addEventListener('DOMContentLoaded', init);
+} else { init(); }
+})();
+if (window.__mochiLoaded) window.__mochiLoaded.push("gift-shop.js");
+} catch (__e) { if (window.__mochiErrLoaded) window.__mochiErrLoaded.push("gift-shop.js"); try { console.error("[JS] gift-shop.js", __e && __e.message || __e); } catch (x) {} if (window.__jsErrors) window.__jsErrors.push("[gift-shop.js] " + String(__e && __e.message || __e)); } })();
+</script>
+<script>/* inline: memo-app.js */
+(function () { try {
+(function () {
+const GNS = 'xy-home-v2';
+function gStore() { try { return window.xyStore(GNS); } catch (e) { return null; } }
+function vibrate(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
+function editingNow() { return Array.from(document.querySelectorAll('.app-grid')).some(g => g.classList.contains('editing')); }
+function toast(msg) {
+let t = document.getElementById('cc-toast');
+if (!t) { t = document.createElement('div'); t.id = 'cc-toast'; document.body.appendChild(t); }
+t.textContent = msg; t.className = 'cc-toast'; void t.offsetWidth; t.className = 'cc-toast show';
+clearTimeout(t._timer); t._timer = setTimeout(() => { t.className = 'cc-toast'; }, 1800);
+}
+function openPage(pg) {
+document.querySelectorAll('.page').forEach(p => p.hidden = true);
+pg.hidden = false;
+requestAnimationFrame(() => {
+const tabbar = document.querySelector('.tabbar');
+const phone = document.querySelector('.phone');
+if (tabbar) tabbar.hidden = true;
+if (phone) phone.classList.add('no-statusbar');
+pg.classList.add('full');
+});
+}
+function backHome(pg) {
+if (pg) pg.classList.remove('full');
+document.querySelectorAll('.page').forEach(p => p.hidden = true);
+const home = document.getElementById('page-phone');
+if (home) home.hidden = false;
+}
+const DEF_MEMO_ALLDONE = ['都做完啦，真棒', '全部完成，说到做到', '清零啦，奖励一个抱抱'];
+const DEF_MEMO_DONE = ['又完成一件，好棒', '进度 +1，继续呀', '完成啦'];
+const DEF_MEMO_ADD = ['记下来啦，我盯着你完成', '嗯，我记着了', '好的，一件一件来'];
+const DEF_MEMO_ASK = [
+'记好啦：「{m}」，打算什么时候做呀？',
+'「{m}」收到了，我先盯着，做完跟我说一声？',
+'又记下一件：「{m}」，什么时候开始？',
+'「{m}」……记下了，可别让我催你哦'
+];
+const DEF_MEMO_REMIND = ['{m}——还躺在备忘录里哦，什么时候做呀？', '翻到你的备忘：「{m}」，别忘了它', '「{m}」还没完成呢，我先帮你记着', '叮——备忘提醒：「{m}」，要开始了吗？'];
+const DEF_MEMO_REMIND_DUE = ['「{m}」今天到期啦，别忘了', '提醒你：「{m}」就是今天哦', '「{m}」今天截止，来得及，快去吧'];
+const DEF_MEMO_REMIND_OVER = ['「{m}」已经过期 {n} 天了哦，今天补上吧', '「{m}」过期 {n} 天啦，要不清掉或改个日子？', '{n} 天前记的「{m}」，还打算做吗？'];
+const host = (document.getElementById('page-phone') || {}).parentNode || document.body;
 const memoApp = document.createElement('div');
 memoApp.className = 'app'; memoApp.setAttribute('data-app', 'memo'); memoApp.setAttribute('data-desk-widget', 'app-memo');
 memoApp.innerHTML =
