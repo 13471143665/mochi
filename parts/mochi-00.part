@@ -6,6 +6,49 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <script>
+/* PWA 内联清单：老站只放行单文件，manifest/图标走 data URI；start_url 按当前地址动态生成 */
+(function () {
+  try {
+    if (!/^https?:$/.test(location.protocol)) return;
+    var i192 = 'data:image/png;base64,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';
+    var i512 = 'data:image/png;base64,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';
+    var m = {
+      name: 'Mochi 字卡', short_name: 'Mochi', description: 'Mochi 字卡单文件应用',
+      start_url: location.href.split('#')[0],
+      scope: location.origin + '/',
+      display: 'standalone', orientation: 'portrait',
+      background_color: '#1c1a17', theme_color: '#1c1a17',
+      icons: [
+        { src: i192, sizes: '192x192', type: 'image/png' },
+        { src: i512, sizes: '512x512', type: 'image/png' },
+        { src: i512, sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+      ]
+    };
+    var json = JSON.stringify(m);
+    var b64 = btoa(unescape(encodeURIComponent(json)));
+    var l = document.createElement('link');
+    l.rel = 'manifest';
+    l.href = 'data:application/manifest+json;base64,' + b64;
+    document.head.appendChild(l);
+    var ai = document.createElement('link');
+    ai.rel = 'apple-touch-icon';
+    ai.href = i192;
+    document.head.appendChild(ai);
+  } catch (e) {}
+})();
+</script>
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#1c1a17">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script>
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  try { navigator.serviceWorker.register('sw.js').catch(function(){}); } catch (e) {}
+}
+</script>
+<script>
 /* 单文件离线版兼容层：主文档由 content:// / file:// 直接提供时，无任何子资源可用 */
 (function () {
   /* 4.1 存储：部分 WebView 在 content:// 源下访问 localStorage 会抛 SecurityError */
@@ -48787,426 +48830,3 @@ return '🪙 ' + (toTa ? chatPartnerName() + ' 的心意币' : '我的心意币'
 function genRpAmount(systemBalanceFen) {
 let amt;
 if (Math.random() < 0.4) {
-amt = RP_SPECIAL_FEN[Math.floor(Math.random() * RP_SPECIAL_FEN.length)];
-} else if (Math.random() < 0.8) {
-const max = Math.min(5200000, systemBalanceFen); // 52000 元 = 5200000 分
-amt = Math.floor(Math.random() * max) + 1;
-} else {
-amt = Math.floor(Math.random() * systemBalanceFen) + 1;
-}
-return Math.min(amt, systemBalanceFen);
-}
-function rpStatusText(rec) {
-const st = rec.rpStatus || 'pending';
-if (st === 'received') return '已领取';
-if (st === 'expired') return '已过期·退回';
-if (st === 'returned') return '已退回';
-return rec.side === 'out' ? (window.taFit ? window.taFit('待TA领取') : '待TA领取') : '待领取'; // #1477：side 缺失的历史卡与渲染的「联系人 发出」同侧＝待我领取
-}
-function rpStatusCls(rec) {
-const st = rec.rpStatus || 'pending';
-if (st === 'received') return 'opened';
-if (st === 'expired' || st === 'returned') return 'expired';
-return '';
-}
-function rpPatchStatusInPlace(idx) {
-const rec = msgs[idx];
-if (!rec || rec.special !== 'redpacket') return false;
-if (!body) return false;
-const el = body.querySelector('.msg-rp[data-idx="' + idx + '"]');
-if (!el) return false;
-const card = el.querySelector('.msg-rp-card');
-if (!card) return false;
-card.classList.remove('opened', 'expired');
-const cls = rpStatusCls(rec);
-if (cls) card.classList.add(cls);
-const st = card.querySelector('.msg-rp-status');
-if (st) st.textContent = rpStatusText(rec);
-return true;
-}
-function rpDailyMax() {
-try { const v = parseInt(store.get('cs-rp-daily-max'), 10); if (isFinite(v) && v >= 0) return v; } catch (e) {}
-return 5;
-}
-function trySystemAutoSend() {
-if (window.nightModeActive && window.nightModeActive()) return;
-if (rateLimitFull()) return; // #1341：同一条口径补到总量限流——额度满时这一发压根不生成，别扣了钱再让卡片被闸拦掉（红包卡是唯一领取入口）
-const rpMax = rpDailyMax(); if (rpMax > 0 && rpDailyCount() >= rpMax) return; // FIX 2026-09-25 #1256：0＝不限是设置页承诺——旧式 max=0 时 0>=0 恒真＝自动红包被整日封死（同 trySystemAskMochi 的 askMax>0 守卫）
-let baseRate = 0.04;
-try { const ap = window.activeStore ? window.activeStore().get('cs-rp-auto-prob') : null; const pv = parseFloat(ap); if (pv !== null && isFinite(pv)) baseRate = Math.max(0, Math.min(100, pv)) / 100; } catch (e) {}
-const qixi = isQixiToday();
-if (qixi) baseRate *= 2;
-if (Math.random() >= baseRate) return;
-let amtFen, wish;
-if (qixi && Math.random() < 0.6) {
-const qixiPool = [777, 7777, 77777];
-if (qixiPool.length) {
-amtFen = pick(qixiPool);
-wish = pick(['七夕快乐', '七夕快乐呀', '宝宝七夕快乐', '今天七夕，给你花']);
-} else {
-amtFen = genRpAmount(5200000);
-wish = '七夕快乐';
-}
-} else {
-amtFen = genRpAmount(5200000);
-wish = pick(['心意', '给你花', '小礼物', '辛苦啦', '开心一下']);
-}
-if (amtFen < 1) return;
-const wallet = rpWalletGet();
-wallet.systemBalance -= amtFen;
-rpWalletSet(wallet);
-rpDailyIncr();
-const amt = amtFen / 100;
-const myCid = window.__activeCid || 'default';
-setTimeout(() => {
-if ((window.__activeCid || 'default') !== myCid) return;
-addIn('', { special: 'redpacket', rateAllow: true, rpAmount: amt, rpWish: wish, rpStatus: 'pending', rpTs: Date.now(), rpCover: rpCoverGet('in') ? 1 : 0 });
-if (window.logFish) window.logFish();
-}, randInt(800, 2000));
-}
-const ASK_DAILY_PREFIX = 'ml2_ask_daily_';
-function askDailyCount() {
-const k = ASK_DAILY_PREFIX + new Date().toISOString().slice(0, 10);
-return Number(store.get(k)) || 0;
-}
-function askDailyIncr() {
-const k = ASK_DAILY_PREFIX + new Date().toISOString().slice(0, 10);
-store.set(k, String((Number(store.get(k)) || 0) + 1));
-}
-function rpAskProbRate() {
-let v = NaN;
-try { v = parseFloat(store.get('cs-rp-ask-prob')); } catch (e) {}
-if (isFinite(v)) return Math.max(0, Math.min(100, v)) / 100;
-try { const p = JSON.parse((window.xyStore('xy-home-v2')).get('piggy-coin-prob') || 'null'); if (p && typeof p.ask === 'number') return Math.max(0, Math.min(1, p.ask)); } catch (e) {}
-return 0.04;
-}
-function rpAskDailyMax() {
-let v = NaN;
-try { v = parseInt(store.get('cs-rp-ask-daily-max'), 10); } catch (e) {}
-if (isFinite(v) && v >= 0) return v;
-try { const g = parseInt((window.xyStore('xy-home-v2')).get('piggy-coin-ask-limit'), 10); if (isFinite(g) && g >= 0) return g; } catch (e) {}
-return 0;
-}
-window.rpAskProbRate = rpAskProbRate;
-window.rpAskDailyMax = rpAskDailyMax;
-function trySystemAskMochi() {
-if (window.nightModeActive && window.nightModeActive()) return;
-if (rateLimitFull()) return; // #1341：同口径补到总量限流——askDailyIncr 与入账都发生在投递前，额度满时这一发不生成
-const askMax = rpAskDailyMax();
-if (askMax > 0 && askDailyCount() >= askMax) return;
-if (Math.random() >= rpAskProbRate()) return;
-const amtFen = genRpAmount(5200000);
-if (amtFen < 1) return;
-askDailyIncr();
-const wallet = rpWalletGet();
-wallet.systemBalance += amtFen;
-rpWalletSet(wallet);
-try { if (window.giftCoinLedgerAdd) window.giftCoinLedgerAdd('ask', 0, amtFen, 'TA自动申请'); } catch (e) {}
-const myCid = window.__activeCid || 'default';
-setTimeout(() => {
-if ((window.__activeCid || 'default') !== myCid) return;
-addRec({ side: 'in', special: 'askcoin', rateAllow: true, askFen: amtFen, askTs: Date.now() });
-saveMsgsNow();
-}, randInt(800, 2400));
-}
-document.addEventListener('mochi-fg-resume', function () {
-try { setTimeout(function () { trySystemAskMochi(); }, randInt(2000, 6000)); } catch (e) {}
-});
-function rpThanksMsg() {
-return pick(['谢谢亲爱的～', '收到啦❤', '嘿嘿谢谢宝宝', '爱你哟', '🥰 谢谢', '开心！谢谢～', '么么哒']);
-}
-function rpThxInMsg() {
-return pick(['被你领走啦～', '就知道你会手快', '嘿嘿，被你抢到了', '我的红包还合口味吗', '领了我的红包，说点好听的～', '手速可以呀😉']);
-}
-function rpCollectFeedback(dir) {
-let mode = 2;
-try {
-const c = cfg();
-if (Number(c['rp-thx-en']) !== 1) return;
-let prob = Number(c['rp-thx-prob']);
-if (!isFinite(prob)) prob = 60;
-if (Math.random() * 100 >= Math.max(0, Math.min(100, prob))) return;
-mode = Number(c['rp-thx-mode']);
-if (mode !== 0 && mode !== 1) mode = 2;
-} catch (e) {}
-const myCid = window.__activeCid || 'default';
-if (mode === 0 || (mode === 2 && Math.random() < 0.6)) {
-setTimeout(() => { if ((window.__activeCid || 'default') !== myCid) return; addIn(dir === 'in' ? rpThxInMsg() : rpThanksMsg(), { silent: true, nightAllow: true, rateAllow: true }); }, randInt(600, 1800));
-} else {
-setTimeout(() => {
-if ((window.__activeCid || 'default') !== myCid) return;
-try {
-const c = cfg();
-const rep = genOneReply(c);
-addInTyped(rep.text, { type: rep.type, parts: rep.parts, tag: pyMultiDrawn ? '多字卡回复' : undefined, tagNoDup: true });
-} catch (e) {}
-}, randInt(800, 2000));
-}
-}
-function handleSendResponse(msg) {
-const idx = msgs.indexOf(msg);
-if (idx < 0) return;
-const rec = msgs[idx];
-if (!rec || rec.rpStatus !== 'pending') return;
-const myCid = window.__activeCid || 'default';
-const r = Math.random();
-const wallet = rpWalletGet();
-const amtFen = Math.round((rec.rpAmount || 0) * 100);
-if (r < 0.2) {
-rec.rpStatus = 'returned';
-wallet.myBalance += amtFen;
-rpWalletSet(wallet);
-saveMsgsNow();
-if (!rpPatchStatusInPlace(idx)) renderWindow(false, true); // FIX 2026-09-07 #230 红包状态流转不整窗重建（闪屏）
-setTimeout(() => { if ((window.__activeCid || 'default') !== myCid) return; addIn('TA 退回了你的红包（心意币 ¥' + Number(rec.rpAmount || 0).toFixed(2) + '）', { special: 'poke', nightAllow: true, rateAllow: true }); }, randInt(500, 1200));
-} else if (r < 0.9) {
-rec.rpStatus = 'received';
-rec.rpOpenedAt = Date.now();
-wallet.systemBalance += amtFen;
-rpWalletSet(wallet);
-saveMsgsNow();
-if (!rpPatchStatusInPlace(idx)) renderWindow(false, true); // FIX 2026-09-07 #230 红包状态流转不整窗重建（闪屏）
-const amtTxt = '（心意币 ¥' + Number(rec.rpAmount || 0).toFixed(2) + '）';
-setTimeout(() => { if ((window.__activeCid || 'default') !== myCid) return; addIn('TA 领取了你的红包' + amtTxt, { special: 'poke', nightAllow: true, rateAllow: true }); }, randInt(400, 1000));
-rpCollectFeedback('out');
-}
-}
-function tryCollectPending() {
-if (Math.random() >= 0.08) return;
-const idx = msgs.findIndex(m => m && m.special === 'redpacket' && m.side === 'out' && m.rpStatus === 'pending');
-if (idx < 0) return;
-const rec = msgs[idx];
-rec.rpStatus = 'received';
-rec.rpOpenedAt = Date.now();
-const wallet = rpWalletGet();
-wallet.systemBalance += Math.round((rec.rpAmount || 0) * 100);
-rpWalletSet(wallet);
-saveMsgsNow();
-if (!rpPatchStatusInPlace(idx)) renderWindow(false, true); // FIX 2026-09-07 #230 红包状态流转不整窗重建（闪屏）
-const amtTxt = '（心意币 ¥' + Number(rec.rpAmount || 0).toFixed(2) + '）';
-const myCid = window.__activeCid || 'default';
-setTimeout(() => { if ((window.__activeCid || 'default') !== myCid) return; addIn('TA 领取了你的红包' + amtTxt, { special: 'poke', nightAllow: true, rateAllow: true }); }, randInt(400, 1000));
-rpCollectFeedback('out');
-}
-function rpExpireCheck() {
-const now = Date.now();
-const wallet = rpWalletGet();
-let changed = false;
-for (let i = 0; i < msgs.length; i++) {
-const rec = msgs[i];
-if (rec && rec.special === 'redpacket' && rec.rpStatus === 'pending' && rec.rpTs) {
-if (now - rec.rpTs > RP_EXPIRY_MS) {
-rec.rpStatus = 'expired';
-rec.expiredAt = now;
-const amtFen = Math.round((rec.rpAmount || 0) * 100);
-if (rec.side === 'out') wallet.myBalance += amtFen;
-else wallet.systemBalance += amtFen;
-changed = true;
-}
-}
-}
-if (changed) { rpWalletSet(wallet); saveMsgsNow(); }
-}
-function rpRenderBalance() {
-const el = document.getElementById('rp-balance');
-if (!el) return;
-const w = rpWalletGet();
-el.textContent = '心意币 ¥' + (w.myBalance / 100).toFixed(2) + ' · ' + chatPartnerName() + ' ¥' + (w.systemBalance / 100).toFixed(2) + ' · 向 Mochi 申请心意币';
-}
-function rpEditWallet() {
-if (!window.openModal) return;
-const taName = window.taFit ? window.taFit('TA') : 'TA';
-const LBL = { my: '我的心意币', ta: taName + '的心意币' };
-let side = 'my';
-let doneAny = false;
-const fmtYuan = (n) => (Math.round(n * 100) / 100).toFixed(2);
-const hintTxt = () => {
-const w = rpWalletGet();
-return '当前：心意币 ¥' + (w.myBalance / 100).toFixed(2) + ' · ' + taName + ' ¥' + (w.systemBalance / 100).toFixed(2) +
-(doneAny ? '\n已到账，可继续为' + LBL[side] + '申请；留空点【完成】结束' : '\n选择收款方，输入申请金额点【申请】，Mochi 打款后自动入账；留空点【完成】结束');
-};
-let ctl = null;
-ctl = window.openModal('向 Mochi 申请心意币', '', (arg) => {
-const picked = (arg === 'my' || arg === 'ta');
-const el = document.getElementById('modal-input');
-const raw = String(picked ? ((el && el.value) || '') : (arg == null ? '' : arg)).trim();
-const target = picked ? arg : side;
-if (raw === '') return; // 留空确定 = 结束本次申请（stay 未置位，正常关闭）
-const n = parseFloat(raw);
-if (isNaN(n) || n <= 0) { toast('申请金额需大于 0'); return; }
-const fen = Math.round(n * 100);
-const w = rpWalletGet();
-if (target === 'my') w.myBalance += fen;
-else w.systemBalance += fen;
-rpWalletSet(w); rpRenderBalance();
-try { if (window.giftCoinLedgerAdd) window.giftCoinLedgerAdd('ask', target === 'my' ? fen : 0, target === 'ta' ? fen : 0, '聊天申请'); } catch (e) {}
-toast('Mochi 已打款，' + LBL[target] + ' +¥' + fmtYuan(fen / 100));
-doneAny = true;
-side = target === 'my' ? 'ta' : 'my';
-if (ctl) {
-ctl.stay();
-const pbs = document.querySelectorAll('#modal-pills .pill');
-const flip = pbs[side === 'my' ? 0 : 1];
-if (flip) flip.click(); // 同步胶囊高亮与内部选中态（下一轮确认仍走 pills 分支）
-ctl.text('');
-ctl.hint(hintTxt());
-ctl.okText('完成');
-}
-}, {
-staticText: hintTxt(),
-pills: [{ value: 'my', label: '我的心意币' }, { value: 'ta', label: taName + ' 的心意币' }],
-pill: 'my',
-placeholder: '输入申请金额（元），留空结束',
-inputmode: 'decimal'
-});
-if (ctl) ctl.okText('申请');
-}
-const rpBalanceEl = document.getElementById('rp-balance');
-if (rpBalanceEl) rpBalanceEl.addEventListener('click', (e) => { e.stopPropagation(); rpEditWallet(); });
-function rpCoverKey(side) { return 'rp-cover-' + (side || 'out'); }
-function rpCoverGet(side) { return store.get(rpCoverKey(side)) || ''; }
-function rpCoverSet(side, dataUrl) {
-const k = rpCoverKey(side);
-if (dataUrl) {
-store.set(k, dataUrl);
-try { if (window.idbSet) window.idbSet(window.activePrefix() + ':' + k, dataUrl); } catch (e) {}
-} else {
-try { store.remove(k); } catch (e) {}
-try { if (window.idbSet) window.idbSet(window.activePrefix() + ':' + k, ''); } catch (e) {}
-}
-}
-function rpCompressCover(src) {
-if (!window.mochiImgCompressTo) return Promise.resolve(null);
-return window.mochiImgCompressTo(src, { maxSide: 400, quality: 0.8, tag: 'rp-cover' });
-}
-const rpCoverPreview = document.getElementById('rp-cover-preview');
-const rpCoverUploadBtn = document.getElementById('rp-cover-upload');
-const rpCoverDelBtn = document.getElementById('rp-cover-del');
-function rpRenderCover() {
-const side = rpSide;
-const cover = rpCoverGet(side);
-const who = side === 'out' ? '我的' : (chatPartnerName() + '的');
-if (rpCoverUploadBtn) rpCoverUploadBtn.textContent = '上传' + who + '封面';
-if (rpCoverDelBtn) rpCoverDelBtn.textContent = '删除' + who + '封面';
-if (cover) {
-if (rpCoverPreview) {
-rpCoverPreview.style.backgroundImage = 'url("' + cover + '")';
-const sp = rpCoverPreview.querySelector('span'); if (sp) sp.style.display = 'none';
-}
-if (rpCoverDelBtn) rpCoverDelBtn.hidden = false;
-} else {
-if (rpCoverPreview) {
-rpCoverPreview.style.backgroundImage = '';
-const sp = rpCoverPreview.querySelector('span'); if (sp) { sp.style.display = ''; sp.textContent = '未设置' + who + '封面'; }
-}
-if (rpCoverDelBtn) rpCoverDelBtn.hidden = true;
-}
-}
-if (rpCoverUploadBtn) {
-rpCoverUploadBtn.addEventListener('click', (e) => {
-e.stopPropagation();
-window.mochiFilePick({
-id: 'mochi-rp-cover-pick', accept: 'image/*', btn: rpCoverUploadBtn,
-onFiles: (files) => {
-const f = files && files[0];
-if (!f) { toast('没有取到图片，请再选一次'); return; }
-if (!window.mochiImgCompressTo) { toast('图片处理组件没加载上（缓存过旧或离线），请重新打开页面再试'); return; }
-rpCompressCover(f).then(data => {
-if (!data) { toast('这张图本机浏览器处理不了，请换一张小图或用系统相机默认尺寸重拍'); return; }
-rpCoverSet(rpSide, data);
-rpRenderCover();
-toast('封面已设置');
-});
-}
-});
-});
-}
-if (rpCoverDelBtn) {
-rpCoverDelBtn.addEventListener('click', (e) => {
-e.stopPropagation();
-rpCoverSet(rpSide, '');
-rpRenderCover();
-toast('已恢复默认封面');
-});
-}
-function sendRedpacket() {
-let amt = rpPickedAmt;
-if (rpCustomInput && rpCustomInput.value) {
-const cv = parseFloat(rpCustomInput.value);
-if (!isNaN(cv) && cv >= 0) amt = Math.round(cv * 100) / 100;
-}
-if (amt == null || isNaN(amt) || amt < 0) { toast('先选择或输入红包金额'); return; }
-const wish = (rpWishInput && rpWishInput.value || '').trim() || (isQixiToday() ? '七夕快乐' : '心意');
-const amtFen = Math.round(amt * 100);
-const wallet = rpWalletGet();
-if (rpSide === 'out') {
-wallet.myBalance -= amtFen;
-} else {
-wallet.systemBalance -= amtFen;
-}
-rpWalletSet(wallet);
-const cover = rpCoverGet(rpSide);
-const rec = { side: rpSide, special: 'redpacket', rpAmount: amt, rpWish: wish, rpStatus: 'pending', rpTs: Date.now(), rpCover: cover ? 1 : 0 };
-addRec(rec);
-if (window.logFish) window.logFish();
-if (rpSide === 'out') {
-setTimeout(() => handleSendResponse(rec), randInt(3000, 8000));
-}
-closeRpPanel();
-}
-if (rpSendBtn) rpSendBtn.addEventListener('click', (e) => { e.stopPropagation(); sendRedpacket(); });
-if (rpCloseBtn) rpCloseBtn.addEventListener('click', (e) => { e.stopPropagation(); closeRpPanel(); });
-const moreRp = document.getElementById('more-rp');
-if (moreRp) {
-moreRp.addEventListener('click', (e) => { e.stopPropagation(); openRpPanel(); });
-}
-const chatDivinePanel = document.getElementById('chat-divine-panel');
-const chatDivineBody = document.getElementById('chat-divine-body');
-const chatDivineClose = document.getElementById('chat-divine-close');
-let chatDivineMode = 'tarot';
-let chatDivineCount = 3;
-function openChatDivine() {
-if (!chatDivinePanel) return;
-const pc = document.getElementById('poke-card');
-if (pc) pc.hidden = true;
-const ep = document.getElementById('emoji-panel');
-if (ep) ep.hidden = true;
-const askP = document.getElementById('chat-ask-panel');
-if (askP) closeChatAskPanel();
-const cs = document.getElementById('chat-search');
-if (cs) cs.hidden = true;
-if (window.closeAvlib) window.closeAvlib();
-chatDivinePanel.hidden = false;
-try {
-const chatAuto = document.getElementById('div-chat-auto-send');
-if (chatAuto) chatAuto.checked = !!(window.divineAutoGet && window.divineAutoGet());
-} catch (err) {}
-try {
-const histList = document.getElementById('div-chat-history');
-if (histList && !histList.hidden && window.divineHistLoad) renderChatHistory();
-} catch (err) {}
-try { if (window.divineRenderTargets) window.divineRenderTargets('div-chat-targets'); } catch (err) {}
-}
-const moreDivine = document.getElementById('more-divine');
-if (moreDivine) {
-moreDivine.addEventListener('click', (e) => {
-e.stopPropagation();
-if (morePanel) morePanel.hidden = true;
-openChatDivine();
-});
-}
-if (chatDivineClose) chatDivineClose.addEventListener('click', (e) => { e.stopPropagation(); chatDivinePanel.hidden = true; });
-if (chatDivineBody) {
-chatDivineBody.querySelectorAll('[data-chatmode]').forEach(b => {
-b.addEventListener('click', (e) => {
-e.stopPropagation();
-chatDivineMode = b.getAttribute('data-chatmode');
-chatDivineBody.querySelectorAll('[data-chatmode]').forEach(x => x.classList.toggle('sel', x === b));
-if (chatDrawCancel) { try { chatDrawCancel(); } catch (err) {} chatDrawCancel = null; }
-const drawBtn2 = document.getElementById('div-chat-draw');
-if (drawBtn2) drawBtn2.textContent = '抽牌';
-const r = document.getElementById('div-chat-result');
-if (r) r.innerHTML = '<div class="div-result-empty">点击上方按钮开始抽牌</div>';
-});
-});
-chatDivineBody.querySelectorAll('[data-chatcount]').forEach(b => {
