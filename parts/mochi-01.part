@@ -1,3 +1,426 @@
+amt = RP_SPECIAL_FEN[Math.floor(Math.random() * RP_SPECIAL_FEN.length)];
+} else if (Math.random() < 0.8) {
+const max = Math.min(5200000, systemBalanceFen); // 52000 元 = 5200000 分
+amt = Math.floor(Math.random() * max) + 1;
+} else {
+amt = Math.floor(Math.random() * systemBalanceFen) + 1;
+}
+return Math.min(amt, systemBalanceFen);
+}
+function rpStatusText(rec) {
+const st = rec.rpStatus || 'pending';
+if (st === 'received') return '已领取';
+if (st === 'expired') return '已过期·退回';
+if (st === 'returned') return '已退回';
+return rec.side === 'out' ? (window.taFit ? window.taFit('待TA领取') : '待TA领取') : '待领取'; // #1477：side 缺失的历史卡与渲染的「联系人 发出」同侧＝待我领取
+}
+function rpStatusCls(rec) {
+const st = rec.rpStatus || 'pending';
+if (st === 'received') return 'opened';
+if (st === 'expired' || st === 'returned') return 'expired';
+return '';
+}
+function rpPatchStatusInPlace(idx) {
+const rec = msgs[idx];
+if (!rec || rec.special !== 'redpacket') return false;
+if (!body) return false;
+const el = body.querySelector('.msg-rp[data-idx="' + idx + '"]');
+if (!el) return false;
+const card = el.querySelector('.msg-rp-card');
+if (!card) return false;
+card.classList.remove('opened', 'expired');
+const cls = rpStatusCls(rec);
+if (cls) card.classList.add(cls);
+const st = card.querySelector('.msg-rp-status');
+if (st) st.textContent = rpStatusText(rec);
+return true;
+}
+function rpDailyMax() {
+try { const v = parseInt(store.get('cs-rp-daily-max'), 10); if (isFinite(v) && v >= 0) return v; } catch (e) {}
+return 5;
+}
+function trySystemAutoSend() {
+if (window.nightModeActive && window.nightModeActive()) return;
+if (rateLimitFull()) return; // #1341：同一条口径补到总量限流——额度满时这一发压根不生成，别扣了钱再让卡片被闸拦掉（红包卡是唯一领取入口）
+const rpMax = rpDailyMax(); if (rpMax > 0 && rpDailyCount() >= rpMax) return; // FIX 2026-09-25 #1256：0＝不限是设置页承诺——旧式 max=0 时 0>=0 恒真＝自动红包被整日封死（同 trySystemAskMochi 的 askMax>0 守卫）
+let baseRate = 0.04;
+try { const ap = window.activeStore ? window.activeStore().get('cs-rp-auto-prob') : null; const pv = parseFloat(ap); if (pv !== null && isFinite(pv)) baseRate = Math.max(0, Math.min(100, pv)) / 100; } catch (e) {}
+const qixi = isQixiToday();
+if (qixi) baseRate *= 2;
+if (Math.random() >= baseRate) return;
+let amtFen, wish;
+if (qixi && Math.random() < 0.6) {
+const qixiPool = [777, 7777, 77777];
+if (qixiPool.length) {
+amtFen = pick(qixiPool);
+wish = pick(['七夕快乐', '七夕快乐呀', '宝宝七夕快乐', '今天七夕，给你花']);
+} else {
+amtFen = genRpAmount(5200000);
+wish = '七夕快乐';
+}
+} else {
+amtFen = genRpAmount(5200000);
+wish = pick(['心意', '给你花', '小礼物', '辛苦啦', '开心一下']);
+}
+if (amtFen < 1) return;
+const wallet = rpWalletGet();
+wallet.systemBalance -= amtFen;
+rpWalletSet(wallet);
+rpDailyIncr();
+const amt = amtFen / 100;
+const myCid = window.__activeCid || 'default';
+setTimeout(() => {
+if ((window.__activeCid || 'default') !== myCid) return;
+addIn('', { special: 'redpacket', rateAllow: true, rpAmount: amt, rpWish: wish, rpStatus: 'pending', rpTs: Date.now(), rpCover: rpCoverGet('in') ? 1 : 0 });
+if (window.logFish) window.logFish();
+}, randInt(800, 2000));
+}
+const ASK_DAILY_PREFIX = 'ml2_ask_daily_';
+function askDailyCount() {
+const k = ASK_DAILY_PREFIX + new Date().toISOString().slice(0, 10);
+return Number(store.get(k)) || 0;
+}
+function askDailyIncr() {
+const k = ASK_DAILY_PREFIX + new Date().toISOString().slice(0, 10);
+store.set(k, String((Number(store.get(k)) || 0) + 1));
+}
+function rpAskProbRate() {
+let v = NaN;
+try { v = parseFloat(store.get('cs-rp-ask-prob')); } catch (e) {}
+if (isFinite(v)) return Math.max(0, Math.min(100, v)) / 100;
+try { const p = JSON.parse((window.xyStore('xy-home-v2')).get('piggy-coin-prob') || 'null'); if (p && typeof p.ask === 'number') return Math.max(0, Math.min(1, p.ask)); } catch (e) {}
+return 0.04;
+}
+function rpAskDailyMax() {
+let v = NaN;
+try { v = parseInt(store.get('cs-rp-ask-daily-max'), 10); } catch (e) {}
+if (isFinite(v) && v >= 0) return v;
+try { const g = parseInt((window.xyStore('xy-home-v2')).get('piggy-coin-ask-limit'), 10); if (isFinite(g) && g >= 0) return g; } catch (e) {}
+return 0;
+}
+window.rpAskProbRate = rpAskProbRate;
+window.rpAskDailyMax = rpAskDailyMax;
+function trySystemAskMochi() {
+if (window.nightModeActive && window.nightModeActive()) return;
+if (rateLimitFull()) return; // #1341：同口径补到总量限流——askDailyIncr 与入账都发生在投递前，额度满时这一发不生成
+const askMax = rpAskDailyMax();
+if (askMax > 0 && askDailyCount() >= askMax) return;
+if (Math.random() >= rpAskProbRate()) return;
+const amtFen = genRpAmount(5200000);
+if (amtFen < 1) return;
+askDailyIncr();
+const wallet = rpWalletGet();
+wallet.systemBalance += amtFen;
+rpWalletSet(wallet);
+try { if (window.giftCoinLedgerAdd) window.giftCoinLedgerAdd('ask', 0, amtFen, 'TA自动申请'); } catch (e) {}
+const myCid = window.__activeCid || 'default';
+setTimeout(() => {
+if ((window.__activeCid || 'default') !== myCid) return;
+addRec({ side: 'in', special: 'askcoin', rateAllow: true, askFen: amtFen, askTs: Date.now() });
+saveMsgsNow();
+}, randInt(800, 2400));
+}
+document.addEventListener('mochi-fg-resume', function () {
+try { setTimeout(function () { trySystemAskMochi(); }, randInt(2000, 6000)); } catch (e) {}
+});
+function rpThanksMsg() {
+return pick(['谢谢亲爱的～', '收到啦❤', '嘿嘿谢谢宝宝', '爱你哟', '🥰 谢谢', '开心！谢谢～', '么么哒']);
+}
+function rpThxInMsg() {
+return pick(['被你领走啦～', '就知道你会手快', '嘿嘿，被你抢到了', '我的红包还合口味吗', '领了我的红包，说点好听的～', '手速可以呀😉']);
+}
+function rpCollectFeedback(dir) {
+let mode = 2;
+try {
+const c = cfg();
+if (Number(c['rp-thx-en']) !== 1) return;
+let prob = Number(c['rp-thx-prob']);
+if (!isFinite(prob)) prob = 60;
+if (Math.random() * 100 >= Math.max(0, Math.min(100, prob))) return;
+mode = Number(c['rp-thx-mode']);
+if (mode !== 0 && mode !== 1) mode = 2;
+} catch (e) {}
+const myCid = window.__activeCid || 'default';
+if (mode === 0 || (mode === 2 && Math.random() < 0.6)) {
+setTimeout(() => { if ((window.__activeCid || 'default') !== myCid) return; addIn(dir === 'in' ? rpThxInMsg() : rpThanksMsg(), { silent: true, nightAllow: true, rateAllow: true }); }, randInt(600, 1800));
+} else {
+setTimeout(() => {
+if ((window.__activeCid || 'default') !== myCid) return;
+try {
+const c = cfg();
+const rep = genOneReply(c);
+addInTyped(rep.text, { type: rep.type, parts: rep.parts, tag: pyMultiDrawn ? '多字卡回复' : undefined, tagNoDup: true });
+} catch (e) {}
+}, randInt(800, 2000));
+}
+}
+function handleSendResponse(msg) {
+const idx = msgs.indexOf(msg);
+if (idx < 0) return;
+const rec = msgs[idx];
+if (!rec || rec.rpStatus !== 'pending') return;
+const myCid = window.__activeCid || 'default';
+const r = Math.random();
+const wallet = rpWalletGet();
+const amtFen = Math.round((rec.rpAmount || 0) * 100);
+if (r < 0.2) {
+rec.rpStatus = 'returned';
+wallet.myBalance += amtFen;
+rpWalletSet(wallet);
+saveMsgsNow();
+if (!rpPatchStatusInPlace(idx)) renderWindow(false, true); // FIX 2026-09-07 #230 红包状态流转不整窗重建（闪屏）
+setTimeout(() => { if ((window.__activeCid || 'default') !== myCid) return; addIn('TA 退回了你的红包（心意币 ¥' + Number(rec.rpAmount || 0).toFixed(2) + '）', { special: 'poke', nightAllow: true, rateAllow: true }); }, randInt(500, 1200));
+} else if (r < 0.9) {
+rec.rpStatus = 'received';
+rec.rpOpenedAt = Date.now();
+wallet.systemBalance += amtFen;
+rpWalletSet(wallet);
+saveMsgsNow();
+if (!rpPatchStatusInPlace(idx)) renderWindow(false, true); // FIX 2026-09-07 #230 红包状态流转不整窗重建（闪屏）
+const amtTxt = '（心意币 ¥' + Number(rec.rpAmount || 0).toFixed(2) + '）';
+setTimeout(() => { if ((window.__activeCid || 'default') !== myCid) return; addIn('TA 领取了你的红包' + amtTxt, { special: 'poke', nightAllow: true, rateAllow: true }); }, randInt(400, 1000));
+rpCollectFeedback('out');
+}
+}
+function tryCollectPending() {
+if (Math.random() >= 0.08) return;
+const idx = msgs.findIndex(m => m && m.special === 'redpacket' && m.side === 'out' && m.rpStatus === 'pending');
+if (idx < 0) return;
+const rec = msgs[idx];
+rec.rpStatus = 'received';
+rec.rpOpenedAt = Date.now();
+const wallet = rpWalletGet();
+wallet.systemBalance += Math.round((rec.rpAmount || 0) * 100);
+rpWalletSet(wallet);
+saveMsgsNow();
+if (!rpPatchStatusInPlace(idx)) renderWindow(false, true); // FIX 2026-09-07 #230 红包状态流转不整窗重建（闪屏）
+const amtTxt = '（心意币 ¥' + Number(rec.rpAmount || 0).toFixed(2) + '）';
+const myCid = window.__activeCid || 'default';
+setTimeout(() => { if ((window.__activeCid || 'default') !== myCid) return; addIn('TA 领取了你的红包' + amtTxt, { special: 'poke', nightAllow: true, rateAllow: true }); }, randInt(400, 1000));
+rpCollectFeedback('out');
+}
+function rpExpireCheck() {
+const now = Date.now();
+const wallet = rpWalletGet();
+let changed = false;
+for (let i = 0; i < msgs.length; i++) {
+const rec = msgs[i];
+if (rec && rec.special === 'redpacket' && rec.rpStatus === 'pending' && rec.rpTs) {
+if (now - rec.rpTs > RP_EXPIRY_MS) {
+rec.rpStatus = 'expired';
+rec.expiredAt = now;
+const amtFen = Math.round((rec.rpAmount || 0) * 100);
+if (rec.side === 'out') wallet.myBalance += amtFen;
+else wallet.systemBalance += amtFen;
+changed = true;
+}
+}
+}
+if (changed) { rpWalletSet(wallet); saveMsgsNow(); }
+}
+function rpRenderBalance() {
+const el = document.getElementById('rp-balance');
+if (!el) return;
+const w = rpWalletGet();
+el.textContent = '心意币 ¥' + (w.myBalance / 100).toFixed(2) + ' · ' + chatPartnerName() + ' ¥' + (w.systemBalance / 100).toFixed(2) + ' · 向 Mochi 申请心意币';
+}
+function rpEditWallet() {
+if (!window.openModal) return;
+const taName = window.taFit ? window.taFit('TA') : 'TA';
+const LBL = { my: '我的心意币', ta: taName + '的心意币' };
+let side = 'my';
+let doneAny = false;
+const fmtYuan = (n) => (Math.round(n * 100) / 100).toFixed(2);
+const hintTxt = () => {
+const w = rpWalletGet();
+return '当前：心意币 ¥' + (w.myBalance / 100).toFixed(2) + ' · ' + taName + ' ¥' + (w.systemBalance / 100).toFixed(2) +
+(doneAny ? '\n已到账，可继续为' + LBL[side] + '申请；留空点【完成】结束' : '\n选择收款方，输入申请金额点【申请】，Mochi 打款后自动入账；留空点【完成】结束');
+};
+let ctl = null;
+ctl = window.openModal('向 Mochi 申请心意币', '', (arg) => {
+const picked = (arg === 'my' || arg === 'ta');
+const el = document.getElementById('modal-input');
+const raw = String(picked ? ((el && el.value) || '') : (arg == null ? '' : arg)).trim();
+const target = picked ? arg : side;
+if (raw === '') return; // 留空确定 = 结束本次申请（stay 未置位，正常关闭）
+const n = parseFloat(raw);
+if (isNaN(n) || n <= 0) { toast('申请金额需大于 0'); return; }
+const fen = Math.round(n * 100);
+const w = rpWalletGet();
+if (target === 'my') w.myBalance += fen;
+else w.systemBalance += fen;
+rpWalletSet(w); rpRenderBalance();
+try { if (window.giftCoinLedgerAdd) window.giftCoinLedgerAdd('ask', target === 'my' ? fen : 0, target === 'ta' ? fen : 0, '聊天申请'); } catch (e) {}
+toast('Mochi 已打款，' + LBL[target] + ' +¥' + fmtYuan(fen / 100));
+doneAny = true;
+side = target === 'my' ? 'ta' : 'my';
+if (ctl) {
+ctl.stay();
+const pbs = document.querySelectorAll('#modal-pills .pill');
+const flip = pbs[side === 'my' ? 0 : 1];
+if (flip) flip.click(); // 同步胶囊高亮与内部选中态（下一轮确认仍走 pills 分支）
+ctl.text('');
+ctl.hint(hintTxt());
+ctl.okText('完成');
+}
+}, {
+staticText: hintTxt(),
+pills: [{ value: 'my', label: '我的心意币' }, { value: 'ta', label: taName + ' 的心意币' }],
+pill: 'my',
+placeholder: '输入申请金额（元），留空结束',
+inputmode: 'decimal'
+});
+if (ctl) ctl.okText('申请');
+}
+const rpBalanceEl = document.getElementById('rp-balance');
+if (rpBalanceEl) rpBalanceEl.addEventListener('click', (e) => { e.stopPropagation(); rpEditWallet(); });
+function rpCoverKey(side) { return 'rp-cover-' + (side || 'out'); }
+function rpCoverGet(side) { return store.get(rpCoverKey(side)) || ''; }
+function rpCoverSet(side, dataUrl) {
+const k = rpCoverKey(side);
+if (dataUrl) {
+store.set(k, dataUrl);
+try { if (window.idbSet) window.idbSet(window.activePrefix() + ':' + k, dataUrl); } catch (e) {}
+} else {
+try { store.remove(k); } catch (e) {}
+try { if (window.idbSet) window.idbSet(window.activePrefix() + ':' + k, ''); } catch (e) {}
+}
+}
+function rpCompressCover(src) {
+if (!window.mochiImgCompressTo) return Promise.resolve(null);
+return window.mochiImgCompressTo(src, { maxSide: 400, quality: 0.8, tag: 'rp-cover' });
+}
+const rpCoverPreview = document.getElementById('rp-cover-preview');
+const rpCoverUploadBtn = document.getElementById('rp-cover-upload');
+const rpCoverDelBtn = document.getElementById('rp-cover-del');
+function rpRenderCover() {
+const side = rpSide;
+const cover = rpCoverGet(side);
+const who = side === 'out' ? '我的' : (chatPartnerName() + '的');
+if (rpCoverUploadBtn) rpCoverUploadBtn.textContent = '上传' + who + '封面';
+if (rpCoverDelBtn) rpCoverDelBtn.textContent = '删除' + who + '封面';
+if (cover) {
+if (rpCoverPreview) {
+rpCoverPreview.style.backgroundImage = 'url("' + cover + '")';
+const sp = rpCoverPreview.querySelector('span'); if (sp) sp.style.display = 'none';
+}
+if (rpCoverDelBtn) rpCoverDelBtn.hidden = false;
+} else {
+if (rpCoverPreview) {
+rpCoverPreview.style.backgroundImage = '';
+const sp = rpCoverPreview.querySelector('span'); if (sp) { sp.style.display = ''; sp.textContent = '未设置' + who + '封面'; }
+}
+if (rpCoverDelBtn) rpCoverDelBtn.hidden = true;
+}
+}
+if (rpCoverUploadBtn) {
+rpCoverUploadBtn.addEventListener('click', (e) => {
+e.stopPropagation();
+window.mochiFilePick({
+id: 'mochi-rp-cover-pick', accept: 'image/*', btn: rpCoverUploadBtn,
+onFiles: (files) => {
+const f = files && files[0];
+if (!f) { toast('没有取到图片，请再选一次'); return; }
+if (!window.mochiImgCompressTo) { toast('图片处理组件没加载上（缓存过旧或离线），请重新打开页面再试'); return; }
+rpCompressCover(f).then(data => {
+if (!data) { toast('这张图本机浏览器处理不了，请换一张小图或用系统相机默认尺寸重拍'); return; }
+rpCoverSet(rpSide, data);
+rpRenderCover();
+toast('封面已设置');
+});
+}
+});
+});
+}
+if (rpCoverDelBtn) {
+rpCoverDelBtn.addEventListener('click', (e) => {
+e.stopPropagation();
+rpCoverSet(rpSide, '');
+rpRenderCover();
+toast('已恢复默认封面');
+});
+}
+function sendRedpacket() {
+let amt = rpPickedAmt;
+if (rpCustomInput && rpCustomInput.value) {
+const cv = parseFloat(rpCustomInput.value);
+if (!isNaN(cv) && cv >= 0) amt = Math.round(cv * 100) / 100;
+}
+if (amt == null || isNaN(amt) || amt < 0) { toast('先选择或输入红包金额'); return; }
+const wish = (rpWishInput && rpWishInput.value || '').trim() || (isQixiToday() ? '七夕快乐' : '心意');
+const amtFen = Math.round(amt * 100);
+const wallet = rpWalletGet();
+if (rpSide === 'out') {
+wallet.myBalance -= amtFen;
+} else {
+wallet.systemBalance -= amtFen;
+}
+rpWalletSet(wallet);
+const cover = rpCoverGet(rpSide);
+const rec = { side: rpSide, special: 'redpacket', rpAmount: amt, rpWish: wish, rpStatus: 'pending', rpTs: Date.now(), rpCover: cover ? 1 : 0 };
+addRec(rec);
+if (window.logFish) window.logFish();
+if (rpSide === 'out') {
+setTimeout(() => handleSendResponse(rec), randInt(3000, 8000));
+}
+closeRpPanel();
+}
+if (rpSendBtn) rpSendBtn.addEventListener('click', (e) => { e.stopPropagation(); sendRedpacket(); });
+if (rpCloseBtn) rpCloseBtn.addEventListener('click', (e) => { e.stopPropagation(); closeRpPanel(); });
+const moreRp = document.getElementById('more-rp');
+if (moreRp) {
+moreRp.addEventListener('click', (e) => { e.stopPropagation(); openRpPanel(); });
+}
+const chatDivinePanel = document.getElementById('chat-divine-panel');
+const chatDivineBody = document.getElementById('chat-divine-body');
+const chatDivineClose = document.getElementById('chat-divine-close');
+let chatDivineMode = 'tarot';
+let chatDivineCount = 3;
+function openChatDivine() {
+if (!chatDivinePanel) return;
+const pc = document.getElementById('poke-card');
+if (pc) pc.hidden = true;
+const ep = document.getElementById('emoji-panel');
+if (ep) ep.hidden = true;
+const askP = document.getElementById('chat-ask-panel');
+if (askP) closeChatAskPanel();
+const cs = document.getElementById('chat-search');
+if (cs) cs.hidden = true;
+if (window.closeAvlib) window.closeAvlib();
+chatDivinePanel.hidden = false;
+try {
+const chatAuto = document.getElementById('div-chat-auto-send');
+if (chatAuto) chatAuto.checked = !!(window.divineAutoGet && window.divineAutoGet());
+} catch (err) {}
+try {
+const histList = document.getElementById('div-chat-history');
+if (histList && !histList.hidden && window.divineHistLoad) renderChatHistory();
+} catch (err) {}
+try { if (window.divineRenderTargets) window.divineRenderTargets('div-chat-targets'); } catch (err) {}
+}
+const moreDivine = document.getElementById('more-divine');
+if (moreDivine) {
+moreDivine.addEventListener('click', (e) => {
+e.stopPropagation();
+if (morePanel) morePanel.hidden = true;
+openChatDivine();
+});
+}
+if (chatDivineClose) chatDivineClose.addEventListener('click', (e) => { e.stopPropagation(); chatDivinePanel.hidden = true; });
+if (chatDivineBody) {
+chatDivineBody.querySelectorAll('[data-chatmode]').forEach(b => {
+b.addEventListener('click', (e) => {
+e.stopPropagation();
+chatDivineMode = b.getAttribute('data-chatmode');
+chatDivineBody.querySelectorAll('[data-chatmode]').forEach(x => x.classList.toggle('sel', x === b));
+if (chatDrawCancel) { try { chatDrawCancel(); } catch (err) {} chatDrawCancel = null; }
+const drawBtn2 = document.getElementById('div-chat-draw');
+if (drawBtn2) drawBtn2.textContent = '抽牌';
+const r = document.getElementById('div-chat-result');
+if (r) r.innerHTML = '<div class="div-result-empty">点击上方按钮开始抽牌</div>';
+});
+});
+chatDivineBody.querySelectorAll('[data-chatcount]').forEach(b => {
 b.addEventListener('click', (e) => {
 e.stopPropagation();
 chatDivineCount = Number(b.getAttribute('data-chatcount'));
@@ -54951,314 +55374,3 @@ window.mochiHistDel(it.id, it.name) +
 '<div class="giftbox-name">' + esc(it.name) + '</div>' +
 '<div class="giftbox-price">¥' + Number(it.price || 0).toFixed(2) + '</div>' +
 '<div class="giftbox-wish">"' + esc(it.wish || '心意') + '"</div>' +
-(boxPending(it) ? '<div class="giftbox-pending">待领取</div>' : '') +
-(boxReplies(it).length ? '<div class="giftbox-repls">' + boxReplyRows(it) + '</div>' : '') +
-'<div class="giftbox-meta">' + esc(from) + ' · ' + esc(fmtTime(it.tm)) + '</div>' +
-'</div>' +
-'</div>';
-})() }; });
-el.innerHTML = window.mochiHistFold(rows, {
-key: 'gift-' + boxTab,
-empty: '<div class="gift-empty">' + (boxTab === 'in' ? (esc(partnerName()) + ' 还没送你礼物<br>' + (window.taFit ? window.taFit('他偶尔会主动从市集挑一份给你，耐心等等') : '他偶尔会主动从市集挑一份给你，耐心等等')) : boxTab === 'self' ? (esc(partnerName()) + ' 还没给自己买过礼物<br>TA 偶尔会按概率给自己挑一件，收进自己的心意柜') : ('你还没送出礼物<br>去心意市集挑一份送给 ' + esc(partnerName()) + ' 吧')) + '</div>',
-todayEmpty: '<div class="dc-h-day-empty">今天没有新的心意</div>'
-});
-el.querySelectorAll('.giftbox-card').forEach(function (c) {
-c.addEventListener('click', function () {
-const it = list.find(function (x) { return x.id === c.dataset.id; });
-if (!it || !window.openTCPanel) return;
-const from = it.side === 'in' ? esc(partnerName()) + ' 送我' : it.side === 'self' ? esc(partnerName()) + ' 自己买的' : '我 送 ' + esc(partnerName());
-const html =
-'<div class="gb-detail">' +
-'<div class="gb-detail-emoji">' + giftMedia(it, 'gb-detail-emoji-img') + '</div>' +
-'<div class="gb-detail-name">' + esc(it.name) + '</div>' +
-'<div class="gb-detail-price">¥' + Number(it.price || 0).toFixed(2) + '</div>' +
-'<div class="gb-detail-wish">"' + esc(it.wish || '心意') + '"</div>' +
-'<div class="gb-detail-meta">' + esc(from) + ' · ' + esc(fmtTime(it.tm)) + '</div>' +
-(boxPending(it) ? '<div class="giftbox-pending gb-detail-pending">待领取</div>' : '') +
-(boxReplies(it).length
-? '<div class="gb-detail-repl-title">这件礼物上的回复</div><div class="gb-detail-repls">' + boxReplyRows(it) + '</div>'
-: '') +
-(boxPending(it) ? '<div class="gb-detail-claim"><button class="msg-gift-claim" type="button" data-gb-claim="' + esc(it.id) + '">领取</button></div>' : '') +
-'</div>';
-window.openTCPanel('心意柜', html);
-const claimBtn = (function () {
-const b = document.querySelector('#tc-body button[data-gb-claim]');
-return (b && b.dataset.gbClaim === String(it.id)) ? b : null;
-})();
-if (claimBtn) claimBtn.addEventListener('click', function () {
-if (!boxPending(it)) return; // 已领取＝幂等（旧面板残留按钮也不重复记账）
-if (!window.giftBoxMarkClaimed || !window.giftBoxMarkClaimed(it.id)) {
-if (typeof window.toast === 'function') window.toast('暂时领不了，稍后再试');
-return;
-}
-renderBox(); // 柜列表就地转已领取（待领取徽标消失、统计不变）
-const done = document.createElement('span');
-done.className = 'msg-gift-got';
-done.textContent = '✓ 已领取';
-claimBtn.replaceWith(done);
-if (typeof window.toast === 'function') window.toast('已领取');
-try { if (window.chatGiftClaimSync) window.chatGiftClaimSync(it.id, it.name); } catch (eCS) {}
-});
-});
-});
-}
-function openPage(pg) {
-document.querySelectorAll('.page').forEach(function (p) { p.hidden = true; });
-pg.hidden = false;
-requestAnimationFrame(function () {
-const tabbar = document.querySelector('.tabbar'); if (tabbar) tabbar.hidden = true;
-const phone = document.querySelector('.phone'); if (phone) phone.classList.add('no-statusbar');
-pg.classList.add('full');
-});
-}
-function backHome() {
-document.querySelectorAll('.page').forEach(function (p) { p.hidden = true; });
-const home = document.getElementById('page-phone'); if (home) home.hidden = false;
-const tabbar = document.querySelector('.tabbar'); if (tabbar) tabbar.hidden = false;
-const phone = document.querySelector('.phone'); if (phone) phone.classList.remove('no-statusbar');
-}
-const BACK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
-const MARKET_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l-1 12H7L6 8z"/><path d="M6 8a6 6 0 0112 0"/><path d="M12 8v4"/></svg>';
-const BOX_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M3 12h18"/><path d="M12 8V5"/><path d="M9 5h6"/></svg>';
-function makeApp(app, name, svg) {
-const a = document.createElement('div');
-a.className = 'app'; a.setAttribute('data-app', app); a.setAttribute('data-desk-widget', 'app-' + app);
-a.innerHTML = '<div class="app-ico">' + svg + '</div><div class="app-name">' + name + '</div>';
-return a;
-}
-function injectDeskApps(pairs) {
-const st = store();
-let layArr = null;
-try { if (st) layArr = JSON.parse(st.get('desk-layout') || 'null'); } catch (e) {}
-const hasLayout = Array.isArray(layArr);
-const ids = pairs.map(function (p) { return p.id; });
-const alreadyInLay = hasLayout && layArr.some(function (pg) { return (pg || []).some(function (w) { return ids.indexOf(w) >= 0; }); });
-let placed = false;
-if (hasLayout && !alreadyInLay) {
-const pagesBox = document.getElementById('desktop-pages');
-if (pagesBox) {
-const curCnt = pagesBox.querySelectorAll('.page-slide').length;
-if (curCnt < 5) {
-const slide = document.createElement('div');
-slide.className = 'page-slide desk-page';
-slide.dataset.desk = String(curCnt);
-const grid = document.createElement('div');
-grid.className = 'app-grid';
-pairs.forEach(function (p) { grid.appendChild(p.el); });
-slide.appendChild(grid);
-pagesBox.appendChild(slide);
-try { st.set('desk-page-count', String(curCnt + 1)); layArr.push(ids.slice()); st.set('desk-layout', JSON.stringify(layArr)); } catch (e) {}
-try { if (window.deskRebuild) window.deskRebuild(); } catch (e) {}
-placed = true;
-}
-}
-}
-if (!placed) {
-pairs.forEach(function (p) {
-const p3 = document.querySelector('.app-grid.p3-grid');
-if (p3) p3.appendChild(p.el); else { const p2 = document.querySelector('.app-grid.p2-grid'); if (p2) p2.appendChild(p.el); }
-});
-try { if (window.applyDeskLayout) window.applyDeskLayout(); } catch (e) {}
-}
-}
-function buildMarketPage(host) {
-marketPage = document.createElement('div');
-marketPage.className = 'page'; marketPage.id = 'page-market'; marketPage.hidden = true;
-marketPage.innerHTML =
-'<div class="chat-head"><span class="ch-back" id="market-back">' + BACK_SVG + '</span><span class="ch-name">心意市集</span></div>' +
-'<div class="market-body">' +
-'<div class="market-hero">' +
-'<div class="market-hero-title">心意市集</div>' +
-'<div class="market-hero-sub">挑一份心意，跨越两个世界送给 TA</div>' +
-'<div class="market-balance" id="market-balance"></div>' +
-'</div>' +
-'<div class="market-mine" id="market-mine"></div>' +
-'<div class="market-cats" id="market-cats"></div>' +
-searchRowHtml('market-search') +
-'<div class="market-grid" id="market-grid"></div>' +
-'<div class="market-foot">' +
-'<button class="market-tool" id="market-wish" type="button">☆ 心愿单</button>' +
-'<button class="market-tool" id="market-manage" type="button">管理</button>' +
-'<button class="market-tool" id="market-add" type="button">＋ 上传商品</button>' +
-'<button class="market-tool" id="market-settings" type="button">设置</button>' +
-'<button class="market-tool" id="market-reset" type="button" hidden>恢复默认商品</button>' +
-'</div>' +
-'</div>';
-host.appendChild(marketPage);
-document.getElementById('market-back').addEventListener('click', backHome);
-bindSearchRow('market-search', renderMarket);
-const mineBox = document.getElementById('market-mine');
-if (mineBox) mineBox.addEventListener('click', function (e) {
-const b = e.target && e.target.closest ? e.target.closest('button') : null;
-if (!b || !b.id) return;
-if (b.id === 'market-mine-add') openAddGiftForm(null);
-else if (b.id === 'market-mine-export') exportMarketGoods();
-else if (b.id === 'market-mine-import') importMarketGoods();
-});
-document.getElementById('market-wish').addEventListener('click', function () { wishTab = taWishUnread() ? 'ta' : 'my'; renderWishPanel(); });
-document.getElementById('market-settings').addEventListener('click', openGiftSettings);
-document.getElementById('market-add').addEventListener('click', function () { if (marketManage) { marketManage = false; renderMarket(); return; } openAddGiftForm(null); });
-document.getElementById('market-manage').addEventListener('click', function () { marketManage = !marketManage; renderMarket(); });
-document.getElementById('market-reset').addEventListener('click', function () {
-if (!window.openModal) return;
-window.openModal('恢复默认商品？（清除对默认商品的修改/删除记录，自定义商品保留）', '', function () {
-if (customWriteBlocked()) return; customSave(customLoad().filter(function (c) { return c && !c.del && !c.base; }));
-renderMarket(); toast('已恢复默认');
-}, { noInput: true });
-});
-}
-function buildGiftboxPage(host) {
-giftboxPage = document.createElement('div');
-giftboxPage.className = 'page'; giftboxPage.id = 'page-giftbox'; giftboxPage.hidden = true;
-giftboxPage.innerHTML =
-'<div class="chat-head"><span class="ch-back" id="giftbox-back">' + BACK_SVG + '</span><span class="ch-name">心意柜</span></div>' +
-'<div class="giftbox-hero">' +
-'<div class="giftbox-hero-title">心意柜</div>' +
-'<div class="giftbox-hero-sub">每一份心意，都值得被珍藏</div>' +
-'<div class="giftbox-stat-cards">' +
-'<div class="giftbox-stat-card"><div class="giftbox-stat-ico">🎁</div><div class="giftbox-stat-num" id="giftbox-stat-in">0</div><div class="giftbox-stat-lbl">收到</div></div>' +
-'<div class="giftbox-stat-card"><div class="giftbox-stat-ico">💌</div><div class="giftbox-stat-num" id="giftbox-stat-out">0</div><div class="giftbox-stat-lbl">送出</div></div>' +
-'<div class="giftbox-stat-card"><div class="giftbox-stat-ico">🛍️</div><div class="giftbox-stat-num" id="giftbox-stat-self">0</div><div class="giftbox-stat-lbl">TA自己买</div></div>' +
-'</div>' +
-'<div class="giftbox-set"><button id="giftbox-tawish" type="button">☆ 看看 ' + esc(partnerName()) + ' 的心愿单</button><button id="giftbox-settings" type="button">⚙ 心意集市和心意柜设置</button></div>' +
-'</div>' +
-'<div class="giftbox-tabs">' +
-'<button class="gb-tab sel" data-btab="in" type="button">收到的</button>' +
-'<button class="gb-tab" data-btab="out" type="button">送出的</button>' +
-'<button class="gb-tab" data-btab="self" type="button">TA自己买的</button>' +
-'</div>' +
-'<div class="giftbox-scroll"><div class="giftbox-list" id="giftbox-list"></div></div>';
-host.appendChild(giftboxPage);
-document.getElementById('giftbox-back').addEventListener('click', function () {
-const fromChat = window.__giftboxFrom === 'chat';
-window.__giftboxFrom = '';
-if (fromChat) {
-document.querySelectorAll('.page').forEach(function (p) { p.hidden = true; });
-const chat = document.getElementById('page-chat'); if (chat) chat.hidden = false;
-const tabbar = document.querySelector('.tabbar'); if (tabbar) tabbar.hidden = false;
-const phone = document.querySelector('.phone'); if (phone) phone.classList.remove('no-statusbar');
-if (giftboxPage) giftboxPage.classList.remove('full');
-} else {
-backHome();
-}
-});
-giftboxPage.querySelectorAll('.gb-tab').forEach(function (t) {
-t.addEventListener('click', function () { boxTab = t.dataset.btab; renderBox(); });
-});
-const gbSettings = document.getElementById('giftbox-settings');
-if (gbSettings) gbSettings.addEventListener('click', openGiftSettings);
-const gbTaWish = document.getElementById('giftbox-tawish');
-if (gbTaWish) gbTaWish.addEventListener('click', function () { wishTab = 'ta'; renderWishPanel(); });
-}
-function init() {
-try { migrateMarketGlobal(false); } catch (e) {}
-try { rescueNewDefaults(); } catch (e) {}
-try { wlUpgradeAndNotify(); } catch (e) {}
-document.addEventListener('mochi-restore-done', function () { try { migrateMarketGlobal(true); } catch (e) {} try { rescueNewDefaults(); } catch (e) {} try { wlUpgradeAndNotify(); } catch (e) {} });
-const host = (document.getElementById('page-phone') || {}).parentNode || document.body;
-buildMarketPage(host);
-buildGiftboxPage(host);
-['gift-balance', 'market-balance'].forEach(function (id) {
-const el = document.getElementById(id);
-if (el) el.addEventListener('click', function (e) { e.stopPropagation(); giftEditWallet(); });
-});
-const marketApp = makeApp('market', '心意市集', MARKET_SVG);
-const giftboxApp = makeApp('giftbox', '心意柜', BOX_SVG);
-injectDeskApps([{ el: marketApp, id: 'app-market' }, { el: giftboxApp, id: 'app-giftbox' }]);
-if (marketApp) marketApp.addEventListener('click', function () { if (editingNow()) return; marketManage = false; panelCat = '全部'; openPage(marketPage); renderMarket(); });
-if (giftboxApp) giftboxApp.addEventListener('click', function () { if (editingNow()) return; window.__giftboxFrom = ''; boxTab = 'in'; openPage(giftboxPage); renderBox(); });
-document.addEventListener('contact-switched', function () {
-try { boxMetaInvalidate(); } catch (e) {}   // #985：切桌面后卡片状态按新桌面重读
-try { syncGiftNames(); } catch (e) {}
-try { if (giftboxPage && !giftboxPage.hidden) renderBox(); } catch (e) {}
-try { if (marketPage && !marketPage.hidden) renderMarket(); } catch (e) {}
-});
-const gp = document.getElementById('chat-gift-panel');
-if (gp) {
-const closeBtn = document.getElementById('chat-gift-close');
-if (closeBtn) closeBtn.addEventListener('click', closeGiftPanel);
-if (!document.getElementById('gift-search')) {
-const catsNode = document.getElementById('gift-cats');
-if (catsNode) catsNode.insertAdjacentHTML('beforebegin', searchRowHtml('gift-search'));
-bindSearchRow('gift-search', giftPanelRerender);
-}
-if (!document.getElementById('gift-wish-entry')) {
-const catsNode2 = document.getElementById('gift-cats');
-if (catsNode2) catsNode2.insertAdjacentHTML('beforebegin', '<div class="gift-wish-row" id="gift-wish-entry"><button id="gift-wish-ta" type="button">☆ 看看 ' + esc(partnerName()) + ' 的心愿单</button></div>');
-}
-if (!document.getElementById('gift-mine-entry')) {
-const catsNode3 = document.getElementById('gift-cats');
-if (catsNode3) catsNode3.insertAdjacentHTML('beforebegin', '<div class="gift-mine-row" id="gift-mine-entry"><button id="gift-mine-add" type="button">＋ 上传我的商品</button></div>');
-}
-const mineAddBtn = document.getElementById('gift-mine-add');
-if (mineAddBtn) mineAddBtn.addEventListener('click', function () { openAddGiftForm(null); });
-const gwBtn = document.getElementById('gift-wish-ta');
-if (gwBtn) gwBtn.addEventListener('click', function () {
-closeGiftPanel();
-wishTab = 'ta';
-renderWishPanel();
-});
-}
-const moreGift = document.getElementById('more-gift');
-if (moreGift) moreGift.addEventListener('click', function (e) { e.stopPropagation(); openGiftPanel(); });
-const moreGiftbox = document.getElementById('more-giftbox');
-if (moreGiftbox) moreGiftbox.addEventListener('click', function (e) {
-e.stopPropagation();
-const mp = document.getElementById('chat-more-panel');
-if (mp) mp.hidden = true;
-window.__giftboxFrom = 'chat';
-boxTab = 'in';
-openPage(giftboxPage);
-renderBox();
-});
-}
-if (document.readyState === 'loading') {
-document.addEventListener('DOMContentLoaded', init);
-} else { init(); }
-})();
-if (window.__mochiLoaded) window.__mochiLoaded.push("gift-shop.js");
-} catch (__e) { if (window.__mochiErrLoaded) window.__mochiErrLoaded.push("gift-shop.js"); try { console.error("[JS] gift-shop.js", __e && __e.message || __e); } catch (x) {} if (window.__jsErrors) window.__jsErrors.push("[gift-shop.js] " + String(__e && __e.message || __e)); } })();
-</script>
-<script>/* inline: memo-app.js */
-(function () { try {
-(function () {
-const GNS = 'xy-home-v2';
-function gStore() { try { return window.xyStore(GNS); } catch (e) { return null; } }
-function vibrate(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
-function editingNow() { return Array.from(document.querySelectorAll('.app-grid')).some(g => g.classList.contains('editing')); }
-function toast(msg) {
-let t = document.getElementById('cc-toast');
-if (!t) { t = document.createElement('div'); t.id = 'cc-toast'; document.body.appendChild(t); }
-t.textContent = msg; t.className = 'cc-toast'; void t.offsetWidth; t.className = 'cc-toast show';
-clearTimeout(t._timer); t._timer = setTimeout(() => { t.className = 'cc-toast'; }, 1800);
-}
-function openPage(pg) {
-document.querySelectorAll('.page').forEach(p => p.hidden = true);
-pg.hidden = false;
-requestAnimationFrame(() => {
-const tabbar = document.querySelector('.tabbar');
-const phone = document.querySelector('.phone');
-if (tabbar) tabbar.hidden = true;
-if (phone) phone.classList.add('no-statusbar');
-pg.classList.add('full');
-});
-}
-function backHome(pg) {
-if (pg) pg.classList.remove('full');
-document.querySelectorAll('.page').forEach(p => p.hidden = true);
-const home = document.getElementById('page-phone');
-if (home) home.hidden = false;
-}
-const DEF_MEMO_ALLDONE = ['都做完啦，真棒', '全部完成，说到做到', '清零啦，奖励一个抱抱'];
-const DEF_MEMO_DONE = ['又完成一件，好棒', '进度 +1，继续呀', '完成啦'];
-const DEF_MEMO_ADD = ['记下来啦，我盯着你完成', '嗯，我记着了', '好的，一件一件来'];
-const DEF_MEMO_ASK = [
-'记好啦：「{m}」，打算什么时候做呀？',
-'「{m}」收到了，我先盯着，做完跟我说一声？',
-'又记下一件：「{m}」，什么时候开始？',
-'「{m}」……记下了，可别让我催你哦'
-];
-const DEF_MEMO_REMIND = ['{m}——还躺在备忘录里哦，什么时候做呀？', '翻到你的备忘：「{m}」，别忘了它', '「{m}」还没完成呢，我先帮你记着', '叮——备忘提醒：「{m}」，要开始了吗？'];
-const DEF_MEMO_REMIND_DUE = ['「{m}」今天到期啦，别忘了', '提醒你：「{m}」就是今天哦', '「{m}」今天截止，来得及，快去吧'];
-const DEF_MEMO_REMIND_OVER = ['「{m}」已经过期 {n} 天了哦，今天补上吧', '「{m}」过期 {n} 天啦，要不清掉或改个日子？', '{n} 天前记的「{m}」，还打算做吗？'];
-const host = (document.getElementById('page-phone') || {}).parentNode || document.body;
