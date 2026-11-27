@@ -4712,6 +4712,10 @@ emojiGroupsBar.appendChild(c);
     '.eg-drag-ghost{position:fixed;z-index:999999;pointer-events:none;padding:8px 15px;border-radius:999px;',
     'background:#111;color:#fff;font-size:12px;font-weight:600;letter-spacing:.3px;',
     'box-shadow:0 10px 28px rgba(0,0,0,.32);white-space:nowrap}',
+    '.stk-drag-ghost{position:fixed;z-index:999999;pointer-events:none;width:62px;height:62px;border-radius:12px;overflow:hidden;',
+    'background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 12px 30px rgba(0,0,0,.35)}',
+    '.stk-drag-ghost img{max-width:100%;max-height:100%}',
+    '.emoji-item.stk-dragging{opacity:.3}',
     '[data-theme="dark"] .emoji-g-chip.eg-drop{outline-color:#f0f0f0;background:rgba(255,255,255,.12)}'
   ].join('');
   document.head.appendChild(st);
@@ -4847,6 +4851,90 @@ function emojiGroupBindDrag(chip, name, onFire) {
     start(e.clientX, e.clientY);
     var mm = function (ev) { move(ev.clientX, ev.clientY, ev); };
     var mu = function (ev) { end(ev.clientX, ev.clientY); window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu); };
+    window.addEventListener('mousemove', mm); window.addEventListener('mouseup', mu);
+  });
+}
+
+/* ---------- v92：单张表情长按拖到别的分组（我的表情包） ----------
+   长按表情格约 420ms 抓起：浮起缩略图，拖到顶部分组栏的某个分组上松手＝
+   把这张表情搬进那个分组（并排到组尾）。只动「我的表情包」；
+   「最近使用」虚拟组不能作为来源；拖起期间拦掉 click，不会误把表情发出去。 */
+var STK_DRAG = null;
+function myStkMoveTo(fromG, idx, toG) {
+  var a = (myGroups || []).find(function (g) { return g[0] === fromG; });
+  var b = (myGroups || []).find(function (g) { return g[0] === toG; });
+  if (!a || !b || !a[1]) return;
+  var one = a[1].splice(idx, 1)[0];
+  if (one == null) return;
+  (b[1] = b[1] || []).push(one);
+  try { myEmojiSaveNow(); } catch (e0) { try { myEmojiSave(); } catch (e1) {} }
+  try { toast('已把这张表情移到「' + toG + '」（组尾）'); } catch (e2) {}
+}
+function myStkBindDrag(d, gname, i, src) {
+  if (gname === '__recent__') return;
+  var timer = null, active = false, sx = 0, sy = 0;
+  function stkGhostMove(x, y) {
+    if (!STK_DRAG || !STK_DRAG.ghost) return;
+    STK_DRAG.ghost.style.left = Math.max(4, x - 31) + 'px';
+    STK_DRAG.ghost.style.top = Math.max(4, y - 74) + 'px';
+    var el = document.elementFromPoint(x, y);
+    var t = el && el.closest ? el.closest('.emoji-g-chip') : null;
+    if (t && (t.dataset.g === '__recent__' || t.dataset.g === STK_DRAG.from)) t = null;
+    if (STK_DRAG.target && STK_DRAG.target !== t) STK_DRAG.target.classList.remove('eg-drop');
+    STK_DRAG.target = t;
+    if (t) t.classList.add('eg-drop');
+  }
+  function start(x, y) {
+    sx = x; sy = y; active = false;
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      active = true;
+      var g = document.createElement('div');
+      g.className = 'stk-drag-ghost';
+      var img = document.createElement('img');
+      img.src = src;
+      g.appendChild(img);
+      document.body.appendChild(g);
+      STK_DRAG = { from: gname, i: i, ghost: g, target: null, item: d };
+      d.classList.add('stk-dragging');
+      try { if (navigator.vibrate) navigator.vibrate(12); } catch (eV) {}
+      stkGhostMove(x, y);
+    }, 420);
+  }
+  function move(x, y, ev) {
+    if (!active) {
+      if (Math.abs(x - sx) > 10 || Math.abs(y - sy) > 10) clearTimeout(timer);
+      return;
+    }
+    if (ev && ev.cancelable) { try { ev.preventDefault(); } catch (e) {} }
+    stkGhostMove(x, y);
+  }
+  function end(x, y, ev) {
+    clearTimeout(timer);
+    if (!active) return;
+    active = false;
+    var to = STK_DRAG && STK_DRAG.target ? (STK_DRAG.target.dataset.g || '') : '';
+    try { if (STK_DRAG.target) STK_DRAG.target.classList.remove('eg-drop'); } catch (e) {}
+    try { d.classList.remove('stk-dragging'); } catch (e1) {}
+    try { if (STK_DRAG.ghost && STK_DRAG.ghost.parentNode) STK_DRAG.ghost.parentNode.removeChild(STK_DRAG.ghost); } catch (e2) {}
+    STK_DRAG = null;
+    /* 拖完这下不是「点表情」，拦掉 click 免得把表情发出去 */
+    if (ev && ev.cancelable) { try { ev.preventDefault(); } catch (e3) {} }
+    if (to && to !== gname) {
+      myStkMoveTo(gname, i, to);
+      try { renderEmojiPanel(); } catch (e5) {}
+    }
+  }
+  d.addEventListener('touchstart', function (e) { var t = e.touches[0]; if (t) start(t.clientX, t.clientY); }, { passive: true });
+  d.addEventListener('touchmove', function (e) { var t = e.touches[0]; if (t) move(t.clientX, t.clientY, e); }, { passive: false });
+  d.addEventListener('touchend', function (e) { var t = e.changedTouches[0]; end(t ? t.clientX : sx, t ? t.clientY : sy, e); }, { passive: false });
+  d.addEventListener('touchcancel', function () { end(sx, sy, null); }, { passive: true });
+  /* 桌面鼠标同样支持 */
+  d.addEventListener('mousedown', function (e) {
+    if (e.button !== 0) return;
+    start(e.clientX, e.clientY);
+    var mm = function (ev) { move(ev.clientX, ev.clientY, ev); };
+    var mu = function (ev) { end(ev.clientX, ev.clientY, ev); window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu); };
     window.addEventListener('mousemove', mm); window.addEventListener('mouseup', mu);
   });
 }
@@ -5020,7 +5108,10 @@ closeEmojiPanel();
 sendSticker(src);
 }
 };
-if (mode === 'mine' && window.ccDblTap) window.ccDblTap(d, act, function () { emojiMvStart(gname, i); });
+if (mode === 'mine' && window.ccDblTap) {
+  window.ccDblTap(d, act, function () { emojiMvStart(gname, i); });
+  if (emojiCat === 'sticker') myStkBindDrag(d, gname, i, src); /* v92：单张长按拖到别的分组 */
+}
 else d.addEventListener('click', act);
 }
 grid.appendChild(d);
@@ -55292,85 +55383,3 @@ bindGmImgRow();
 const okBtn = document.getElementById('gm-ok');
 const cancelBtn = document.getElementById('gm-cancel');
 if (okBtn) okBtn.addEventListener('click', function () {
-const name = (document.getElementById('gm-name').value || '').trim();
-const emoji = (document.getElementById('gm-emoji').value || '').trim() || '🎁';
-const price = Math.max(0, parseFloat(document.getElementById('gm-price').value) || 0);
-const cat = document.getElementById('gm-cat').value || '关怀';
-const wish = (document.getElementById('gm-wish').value || '').trim() || '送给你';
-if (!name) { toast('先填名字'); return; }
-const item = { id: editGift ? editGift.id : ('g_custom_' + Date.now()), name: name, emoji: emoji, img: gmImg, price: price, cat: cat, wish: wish };
-const customs = customLoad();
-if (editGift && DEF_IDS[item.id]) {
-const merged = Object.assign({}, DEF_GIFTS.find(function (x) { return x.id === item.id; }) || {}, item, { base: 1 });
-const idx = customs.findIndex(function (x) { return x && x.id === item.id; });
-if (idx >= 0) customs[idx] = merged; else customs.push(merged);
-} else if (editGift) {
-const idx = customs.findIndex(function (x) { return x && x.id === item.id; });
-if (idx >= 0) customs[idx] = item; else customs.push(item);
-} else {
-customs.push(item);
-}
-if (customWriteBlocked()) { customAwaitBack(marketRerenderBoth); return; } customSave(customs); closeTc(); marketRerenderBoth(); toast('已保存'); // #1540：marketRerenderBoth＝市集页＋开着的聊天送礼面板都重画（面板里新加的商品立刻可见）
-});
-if (cancelBtn) cancelBtn.addEventListener('click', closeTc);
-}
-let giftboxPage = null, boxTab = 'in';
-function syncGiftNames() {
-const pn = partnerName();
-const boxTawish = document.getElementById('giftbox-tawish');
-if (boxTawish) boxTawish.textContent = '☆ 看看 ' + pn + ' 的心愿单';
-const gwBtn = document.getElementById('gift-wish-ta');
-if (gwBtn) gwBtn.textContent = '看看 ' + pn + ' 的心愿单';
-}
-function boxReplies(it) {
-if (!it || !Array.isArray(it.replies)) return [];
-return boxDedupeReplies(it.replies.filter(function (r) { return r && typeof r.text === 'string' && r.text; }));
-}
-function boxWhoLabel(who) { return who === 'me' ? '我' : partnerName(); }
-function boxReplyRows(it) {
-return boxReplies(it).map(function (r) {
-return '<div class="giftbox-repl-row"><span class="giftbox-repl-who">' + esc(boxWhoLabel(r.who)) + '</span><span class="giftbox-repl-tx">' + esc(r.text) + '</span></div>';
-}).join('');
-}
-function boxPending(it) { return !!(it && it.side === 'in' && it.claimed === 0); }
-function renderBox() {
-syncGiftNames();
-const list = boxLoad();
-const inList = list.filter(function (x) { return x.side === 'in'; });
-const outList = list.filter(function (x) { return x.side === 'out'; });
-const selfList = list.filter(function (x) { return x.side === 'self'; });
-const statIn = document.getElementById('giftbox-stat-in');
-const statOut = document.getElementById('giftbox-stat-out');
-const statSelf = document.getElementById('giftbox-stat-self');
-if (statIn) statIn.textContent = String(inList.length);
-if (statOut) statOut.textContent = String(outList.length);
-if (statSelf) statSelf.textContent = String(selfList.length);
-const tabs = document.querySelectorAll('.gb-tab');
-tabs.forEach(function (t) {
-t.classList.toggle('sel', t.dataset.btab === boxTab);
-const bt = t.dataset.btab;
-t.textContent = bt === 'in' ? (partnerName() + ' 送我的') : bt === 'out' ? ('我送 ' + partnerName() + ' 的') : (partnerName() + ' 自己买的');
-});
-const show = (boxTab === 'in' ? inList : boxTab === 'out' ? outList : selfList).slice().sort(function (a, b) { return b.tm - a.tm; });
-const el = document.getElementById('giftbox-list'); if (!el) return;
-window.mochiHistDelBind(el, {
-title: '删除这件心意？',
-onDel: function (id) {
-const left = boxLoad().filter(function (x) { return String(x.id) !== String(id); });
-boxSave(left);
-boxMetaInvalidate();
-renderBox();
-if (typeof window.toast === 'function') window.toast('已从心意柜删除这一件');
-}
-});
-const rows = show.map(function (it) { return { ts: Number(it.tm) || 0, html: (function () {
-const from = it.side === 'in' ? esc(partnerName()) + ' 送我' : it.side === 'self' ? esc(partnerName()) + ' 自己买的' : '我 送 ' + esc(partnerName());
-return '<div class="giftbox-card" data-id="' + esc(it.id) + '">' +
-'<div class="giftbox-card-top">' +
-window.mochiHistDel(it.id, it.name) +
-'<div class="giftbox-emoji">' + giftMedia(it, 'giftbox-emoji-img') + '</div>' +
-'</div>' +
-'<div class="giftbox-card-body">' +
-'<div class="giftbox-name">' + esc(it.name) + '</div>' +
-'<div class="giftbox-price">¥' + Number(it.price || 0).toFixed(2) + '</div>' +
-'<div class="giftbox-wish">"' + esc(it.wish || '心意') + '"</div>' +
