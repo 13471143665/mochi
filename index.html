@@ -1,1 +1,62 @@
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><meta name="theme-color" content="#1c1a17"><title>Mochi 字卡</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" type="image/png" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><style>html,body{margin:0;padding:0;width:100%;height:100%;background:#1c1a17}#ld{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#9a8f80;font:14px/1.6 system-ui,-apple-system,sans-serif;letter-spacing:.2em}</style></head><body><div id="ld">加 载 中 …</div><script>if('serviceWorker' in navigator){try{navigator.serviceWorker.register('sw.js').catch(function(){})}catch(e){}}(async function(){var base='';try{base=new URL('.',location.href).href}catch(e){}var parts=[],i=0;for(;;){var n=(i<10?'0':'')+i;var r;try{r=await fetch(base+'parts/mochi-'+n+'.part?t='+Date.now(),{cache:'no-store'})}catch(e){break}if(!r.ok)break;parts.push(await r.text());i++}if(!parts.length){document.getElementById('ld').textContent='加载失败，请检查网络后刷新重试';return}var html=parts.join('');document.open();document.write(html);document.close()})();</script></body></html>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><meta name="theme-color" content="#1c1a17"><title>齊陳家</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" type="image/png" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><style>html,body{margin:0;padding:0;width:100%;height:100%;background:#1c1a17}#ld{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:#9a8f80;font:14px/1.6 system-ui,-apple-system,sans-serif;letter-spacing:.2em}#bar{width:56%;max-width:260px;height:3px;border-radius:3px;background:#2e2a25;overflow:hidden}#fill{height:100%;width:0;background:#9a8f80;transition:width .2s}</style></head><body><div id="ld"><div id="txt">加 载 中 …</div><div id="bar"><div id="fill"></div></div></div><script>if('serviceWorker' in navigator){try{navigator.serviceWorker.register('sw.js').catch(function(){})}catch(e){}}(function(){
+/* v931：三通道加载（本站 → jsDelivr → statically）+ 实时进度 + 15s 无响应自动换线。
+   分块放在带版本号的目录里（v931），每次更新换目录名，彻底避开 CDN 旧缓存 */
+var V='v931';
+var sources=[
+  function(p){ return new URL('.',location.href).href+'parts/'+V+'/'+p; },
+  function(p){ return 'https://cdn.jsdelivr.net/gh/13471143665/mochi@main/parts/'+V+'/'+p; },
+  function(p){ return 'https://cdn.statically.io/gh/13471143665/mochi/main/parts/'+V+'/'+p; }
+];
+var txt=document.getElementById('txt'),fill=document.getElementById('fill');
+function setT(s){ try{ txt.textContent=s; }catch(e){} }
+function fetchPart(p,onProg){
+  var order=sources.slice();
+  function tryNext(){
+    if(!order.length) return Promise.reject(new Error('all-fail'));
+    var mk=order.shift(),url=mk(p),ctrl=('AbortController' in window)?new AbortController():null;
+    var stall=null,done=0;
+    var reset=function(){ if(stall)clearTimeout(stall); stall=setTimeout(function(){ try{ctrl&&ctrl.abort();}catch(e){} done=-1; },15000); };
+    reset();
+    var pr=fetch(url,{cache:'no-store',signal:ctrl?ctrl.signal:undefined}).then(function(r){
+      if(!r.ok) throw new Error('http '+r.status);
+      var len=+r.headers.get('Content-Length')||0,rd=r.body&&r.body.getReader?r.body.getReader():null;
+      if(!rd){ reset(); return r.text().then(function(t){ clearTimeout(stall); onProg(t.length,t.length); return t; }); }
+      var chunks=[];
+      function pump(){
+        return rd.read().then(function(x){
+          if(done<0) throw new Error('stalled');
+          reset();
+          if(x.done){ clearTimeout(stall); var all=chunks.join(''); onProg(all.length,all.length); return all; }
+          chunks.push(x.value); done+=x.value.length;
+          onProg(done,len);
+          return pump();
+        });
+      }
+      return pump();
+    }).catch(function(e){ clearTimeout(stall); throw e; });
+    return pr.catch(function(){ return tryNext(); });
+  }
+  return tryNext();
+}
+var parts=[],loaded=0,total=0;
+function prog(d,l){
+  if(l>0){ var pct=Math.min(99,Math.round((loaded+l)/total*100)); setT('加 载 中 '+pct+'%'); fill.style.width=pct+'%'; }
+  else { var mb=(loaded/1048576).toFixed(1); setT('加 载 中 '+mb+'MB'); }
+}
+function sizes(){ total=3145728*2+1717634; }
+sizes();
+var i=0;
+function next(){
+  if(i>=3){ return Promise.resolve(); }
+  var n=(i<10?'0':'')+i, p='mochi-'+n+'.part';
+  return fetchPart(p,function(d,l){ /* 只显示当前整体进度 */ prog(d,l); })
+    .then(function(t){ parts.push(t); loaded+=t.length; i++; return next(); });
+}
+next().then(function(){
+  if(!parts.length){ setT('加载失败，请检查网络后刷新重试'); return; }
+  var html=parts.join('');
+  document.open(); document.write(html); document.close();
+}).catch(function(){
+  setT('加载失败 · 请刷新重试（网络连不上 GitHub 时换个网络/流量试试）');
+});
+})();</script></body></html>
