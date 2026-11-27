@@ -1,4 +1,4 @@
-amt = RP_SPECIAL_FEN[Math.floor(Math.random() * RP_SPECIAL_FEN.length)];
+FEN.length)];
 } else if (Math.random() < 0.8) {
 const max = Math.min(5200000, systemBalanceFen); // 52000 元 = 5200000 分
 amt = Math.floor(Math.random() * max) + 1;
@@ -55383,3 +55383,5 @@ bindGmImgRow();
 const okBtn = document.getElementById('gm-ok');
 const cancelBtn = document.getElementById('gm-cancel');
 if (okBtn) okBtn.addEventListener('click', function () {
+const name = (document.getElementById('gm-name').value || '').trim();
+cons
