@@ -25122,8 +25122,11 @@ if (window.__mochiLoaded) window.__mochiLoaded.push("mobile-adapt.js");
     var m = openMask; openMask = null;
     m.remove();
   }
-  function paintScore(box, val) {
-    var s = scoreOf(val);
+  function paintScore(box, val, preset) {
+    /* v92：preset＝专属字卡外面徽章已存的分数（dataset.satScore）——
+       弹窗初始展示直接沿用外面那颗分，保证「外面是几分，点进去就是几分」；
+       用户改了文字 / AI 改写后重新实时评估 */
+    var s = (preset >= 1 && preset <= 10) ? Math.round(preset) : scoreOf(val);
     /* v92：档位与「专属字卡 · 字卡适应度」同口径——≥7 易(绿) / ≥4 中(黄) / <4 难(红)，
        与 card-sat-yz.js 的 tier 判定完全一致，两边星星互相对得上 */
     var tier = tierOf(s);
@@ -25160,7 +25163,8 @@ if (window.__mochiLoaded) window.__mochiLoaded.push("mobile-adapt.js");
     var scoreBox = mask.querySelector('#crwScore');
     var again = mask.querySelector('#crwAgain');
     out.value = src;
-    paintScore(scoreBox, out.value);
+    /* v92：专属字卡带外面徽章的分（dataset.satScore），初始星级直接沿用外面的 */
+    paintScore(scoreBox, out.value, Number(opts.score) || 0);
 
     mask.querySelector('#crwX').addEventListener('click', closeRewrite);
     mask.querySelector('#crwCancel').addEventListener('click', closeRewrite);
@@ -25533,7 +25537,10 @@ if (window.__mochiLoaded) window.__mochiLoaded.push("mobile-adapt.js");
       text: txt || clean(raw),
       g: item.getAttribute('data-g') || '',
       idx: Number(item.getAttribute('data-idx')),
-      label: '角色字卡'
+      label: '角色字卡',
+      /* v92：带上外面徽章已算好的 TA 评分（dataset.satScore），
+         弹窗初始星级＝外面显示的分数，不再自己重新算 */
+      score: Number(item.dataset.satScore) || 0
     };
   }
   function decorateList() {
