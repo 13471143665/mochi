@@ -48830,3 +48830,4 @@ return '🪙 ' + (toTa ? chatPartnerName() + ' 的心意币' : '我的心意币'
 function genRpAmount(systemBalanceFen) {
 let amt;
 if (Math.random() < 0.4) {
+amt = RP_SPECIAL_FEN[Math.floor(Math.random() * RP_SPECIAL_
