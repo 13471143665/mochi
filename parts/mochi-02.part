@@ -1,5 +1,4 @@
-const name = (document.getElementById('gm-name').value || '').trim();
-const emoji = (document.getElementById('gm-emoji').value || '').trim() || '🎁';
+t emoji = (document.getElementById('gm-emoji').value || '').trim() || '🎁';
 const price = Math.max(0, parseFloat(document.getElementById('gm-price').value) || 0);
 const cat = document.getElementById('gm-cat').value || '关怀';
 const wish = (document.getElementById('gm-wish').value || '').trim() || '送给你';
@@ -26407,7 +26406,13 @@ if (window.__mochiLoaded) window.__mochiLoaded.push("mobile-adapt.js");
       document.body.appendChild(nu);
       ['canplay', 'loadeddata'].forEach(function (evn) {
         nu.addEventListener(evn, function () {
-          if (opAudio === nu && opAudioUnlocked && nu.paused) { try { nu.play(); } catch (eC) {} }
+          /* v93a：开屏页已关（进桌面/设置）后绝不复活音乐——
+             之前这里没有 hidden 检查，双击进桌面 opStopAll 停掉后，
+             若这个重建元素的 canplay 事件晚到（网络慢才加载完），
+             会自己 play() 把音乐在桌面里重新放出来（乱播放主因） */
+          var pgR = $('page-opening');
+          if (pgR && (pgR.hidden || pgR.classList.contains('op-config'))) return;
+          if (opAudio === nu && opAudioUnlocked && !opMusicOff && nu.paused) { try { nu.play(); } catch (eC) {} }
         });
       });
       opAudio = nu;
@@ -26417,6 +26422,10 @@ if (window.__mochiLoaded) window.__mochiLoaded.push("mobile-adapt.js");
   function opAudioTryPlay(el) {
     el = el || opAudio;
     if (!el) return;
+    /* v93a：开屏页已关（进桌面/设置）后绝不尝试起播——手势激活是一次全局状态，
+       桌面里任何残余调用都可能借「已激活」把开屏音乐放出来 */
+    var pgT = $('page-opening');
+    if (pgT && (pgT.hidden || pgT.classList.contains('op-config'))) return;
     try {
       var p = el.play();
       if (p && p.then) p.then(function () { opMusicErr = ''; }).catch(function (e) {
@@ -26614,7 +26623,11 @@ if (window.__mochiLoaded) window.__mochiLoaded.push("mobile-adapt.js");
     clearInterval(opImgTimer); clearInterval(opProgTimer);
     if (opSyncTimer) { clearInterval(opSyncTimer); opSyncTimer = null; }
     try { clearInterval(opUnmuteTimer); } catch (eU0) {}
-    try { if (opAudio) { opAudio.pause(); opAudio.currentTime = 0; opAudio.volume = 1; } } catch (eSm) {}
+    /* v93a：彻底断播——pause 复位 + 回静音 + 复位解锁标记。
+       之前只 pause：解锁标记还挂着 true、元素没回静音，
+       任何残留监听器（canplay 晚到 / visibilitychange）都能把音乐续播起来 */
+    opAudioUnlocked = false;
+    try { if (opAudio) { opAudio.pause(); opAudio.currentTime = 0; opAudio.muted = true; opAudio.volume = 1; } } catch (eSm) {}
     opPill(false);
   }
   function opStopMusic() {
@@ -27315,8 +27328,10 @@ if (window.__mochiLoaded) window.__mochiLoaded.push("mobile-adapt.js");
       if (en) {
         var _pgS = $('page-opening');
         try {
-          /* 开屏页还开着就先别出声（进主页后由 opDismiss 起播） */
-          if (opAudio && !(_pgS && !_pgS.hidden)) {
+          /* v93a：只在开屏页正以播放态显示时才起播；
+             在桌面/设置里开开关＝只记偏好，下次开屏生效，绝不现场放歌
+             （旧代码在开屏页隐藏时反而 play()，音乐就在桌面里响出来） */
+            if (opAudio && _pgS && !_pgS.hidden && !_pgS.classList.contains('op-config')) {
             opAudio.muted = false; opAudio.volume = 1;
             if (opAudio.paused) { var p = opAudio.play(); if (p && p.catch) p.catch(function () {}); }
           }
@@ -33757,9 +33772,10 @@ try {
     }
     function musicReallyPlaying() {
       /* v92y：音乐「真的出声了」= 正在播且未静音（用户点过屏幕解锁）。
-         opAudio 在开屏模块闭包里，直接查 DOM 里的音频元素 */
+         opAudio 在开屏模块闭包里，查 DOM 时只认开屏音乐元素（v93a：带 data-opid
+         标记），别把聊天语音等无关 audio 误当成开屏音乐挡住自动进站 */
       try {
-        var a = document.querySelector('audio[src]');
+        var a = document.querySelector('audio[src][data-opid]') || document.querySelector('audio[src]');
         return !!(a && !a.paused && a.muted === false);
       } catch (eM) { return false; }
     }
